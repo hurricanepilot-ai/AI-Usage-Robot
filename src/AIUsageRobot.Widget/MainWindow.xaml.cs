@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     private int _deepSeekNotificationLevel;
     private OverviewDto? _lastOverview;
     private TrendWindow? _trendWindow;
+    private DesktopAlertWindow? _desktopAlert;
     private bool _showingChatGpt;
 
     public MainWindow()
@@ -63,6 +64,8 @@ public partial class MainWindow : Window
             await RefreshAsync(false);
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--trend", StringComparison.OrdinalIgnoreCase)))
             OpenTrendWindow();
+        if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--test-alert", StringComparison.OrdinalIgnoreCase)))
+            TestAlert();
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)
@@ -292,6 +295,11 @@ public partial class MainWindow : Window
 
     private void ShowBalloon(string title, string message, System.Windows.Forms.ToolTipIcon icon)
     {
+        _desktopAlert?.Close();
+        _desktopAlert = new DesktopAlertWindow(title, message, icon == System.Windows.Forms.ToolTipIcon.Warning);
+        _desktopAlert.Closed += (_, _) => _desktopAlert = null;
+        _desktopAlert.Show();
+
         _trayIcon.BalloonTipTitle = title;
         _trayIcon.BalloonTipText = message;
         _trayIcon.BalloonTipIcon = icon;
