@@ -7,6 +7,7 @@ builder.WebHost.UseUrls(LocalAppStorage.ApiBaseUrl);
 builder.Services.AddSingleton<BalanceRepository>();
 builder.Services.AddSingleton<ChatGptQuotaRepository>();
 builder.Services.AddSingleton<MonitoringHistoryRepository>();
+builder.Services.AddSingleton<DeepSeekUsageService>();
 builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 builder.Services.AddHttpClient<DeepSeekBalanceClient>(client =>
 {
@@ -53,6 +54,17 @@ app.MapGet("/api/history/{provider}", async (
     if (normalized is not ("codex" or "deepseek"))
         return Results.BadRequest(new { error = "provider 必须是 codex 或 deepseek" });
     return Results.Ok(await history.GetAsync(normalized, hours ?? 24 * 7, ct));
+});
+
+app.MapGet("/api/deepseek/usage/daily", async (
+    int? days,
+    DeepSeekUsageService usage,
+    CancellationToken ct) =>
+{
+    var requestedDays = days ?? 7;
+    if (requestedDays is < 1 or > 90)
+        return Results.BadRequest(new { error = "days 必须在 1 到 90 之间" });
+    return Results.Ok(await usage.GetDailyAsync(requestedDays, ct));
 });
 
 app.MapPost("/api/codex/refresh", async (

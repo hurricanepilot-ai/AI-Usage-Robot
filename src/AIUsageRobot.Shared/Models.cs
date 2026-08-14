@@ -100,6 +100,20 @@ public sealed record ProviderSnapshotDto(
     string Unit,
     DateTimeOffset CollectedAt);
 
+public sealed record DeepSeekDailyAmountDto(
+    DateOnly Date,
+    decimal AmountUsed,
+    bool HasData,
+    int SampleCount,
+    decimal? OpeningBalance,
+    decimal? ClosingBalance,
+    string Currency);
+
+public sealed record DeepSeekUsageTrendDto(
+    IReadOnlyList<DeepSeekDailyAmountDto> Days,
+    DateTimeOffset? HistoryStartedAt,
+    string CalculationMethod);
+
 public sealed record CreatePairingCodeResponse(string Code, DateTimeOffset ExpiresAt);
 public sealed record PairExtensionRequest(string Code);
 public sealed record PairExtensionResponse(string Token);

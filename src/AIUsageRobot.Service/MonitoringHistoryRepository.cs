@@ -56,10 +56,11 @@ public sealed class MonitoringHistoryRepository
             SELECT provider, metric, value, unit, collected_at_utc
             FROM provider_snapshots
             WHERE provider = $provider AND collected_at_utc >= $since
-            ORDER BY collected_at_utc DESC LIMIT 2000;
+            ORDER BY collected_at_utc DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$provider", provider);
         command.Parameters.AddWithValue("$since", DateTimeOffset.UtcNow.AddHours(-Math.Clamp(hours, 1, 24 * 90)).UtcDateTime.ToString("O"));
+        command.Parameters.AddWithValue("$limit", Math.Clamp(hours * 20, 2_000, 50_000));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
             result.Add(new ProviderSnapshotDto(reader.GetString(0), reader.GetString(1),

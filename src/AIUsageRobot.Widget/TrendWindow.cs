@@ -141,21 +141,38 @@ public sealed class TrendWindow : Window
 
     private async Task RenderDeepSeekAsync(DeepSeekBalanceDto deepSeek)
     {
-        _headline.Text = deepSeek.TotalBalance.Value is decimal balance ? $"{deepSeek.Currency} {balance:N2}" : "DeepSeek 余额未知";
-        _summary.Text = "近七日每日最后一次余额";
         try
         {
-            var history = await _http.GetFromJsonAsync<List<ProviderSnapshotDto>>("api/history/deepseek?hours=168", new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
-            var byDate = history
-                .Where(point => point.Metric == "balance")
-                .GroupBy(point => DateOnly.FromDateTime(point.CollectedAt.ToLocalTime().DateTime))
-                .ToDictionary(group => group.Key, group => (double)group.OrderBy(point => point.CollectedAt).Last().Value);
-            var current = deepSeek.TotalBalance.Value is decimal amount ? (double)amount : 0;
-            var points = LastSevenDays().Select(date => new TrendPoint(date, byDate.GetValueOrDefault(date, date == DateOnly.FromDateTime(DateTime.Today) ? current : double.NaN))).ToArray();
-            _chart.SetPoints(points, deepSeek.Currency, Color.FromRgb(61, 174, 255), bars: false);
+            var trend = await _http.GetFromJsonAsync<DeepSeekUsageTrendDto>(
+                "api/deepseek/usage/daily?days=7",
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var today = trend?.Days.LastOrDefault();
+            _headline.Text = today is not null
+                ? $"今日使用 {today.Currency} {today.AmountUsed:N2}"
+                : "DeepSeek 使用量未知";
+            var balanceText = deepSeek.TotalBalance.Value is decimal balance
+                ? $"当前余额 {deepSeek.Currency} {balance:N2}"
+                : "当前余额未知";
+            var coverage = trend?.HistoryStartedAt is DateTimeOffset startedAt
+                ? FormatCoverage(DateTimeOffset.UtcNow - startedAt)
+                : "尚无历史";
+            _summary.Text = $"{balanceText} · 已记录 {coverage} · 由余额下降推导";
+            var points = trend?.Days.Select(day => new TrendPoint(
+                day.Date,
+                day.HasData ? (double)day.AmountUsed : double.NaN)).ToArray() ?? [];
+            _chart.SetPoints(points, deepSeek.Currency, Color.FromRgb(61, 174, 255), bars: true);
         }
-        catch { _chart.SetPoints([], deepSeek.Currency, Color.FromRgb(61, 174, 255), bars: false); }
+        catch (Exception exception)
+        {
+            _headline.Text = "DeepSeek 使用量暂不可用";
+            _summary.Text = exception.Message;
+            _chart.SetPoints([], deepSeek.Currency, Color.FromRgb(61, 174, 255), bars: true);
+        }
     }
+
+    private static string FormatCoverage(TimeSpan age) => age.TotalDays >= 1
+        ? $"{Math.Max(1, (int)age.TotalDays)} 天"
+        : $"{Math.Max(1, (int)age.TotalHours)} 小时";
 
     private void UpdateAlertStatus()
     {
