@@ -97,7 +97,8 @@
             <Path Data="M 77,160 L 243,160" Stroke="{StaticResource ShellLight}" StrokeThickness="5"/>
             <Border Width="184" Height="116" Margin="68,173,68,0" VerticalAlignment="Top" CornerRadius="7"
                     Background="#0D1718" BorderBrush="#765619" BorderThickness="5">
-                <Grid x:Name="ScreenFrame" Margin="12,9">
+                <Grid x:Name="ScreenFrame" Margin="12,9" Cursor="Hand" MouseLeftButtonUp="ScreenFrame_MouseLeftButtonUp"
+                      ToolTip="点击打开七日趋势与额度预警">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <DockPanel>
                         <TextBlock x:Name="PageTitle" Text="DEEPSEEK" Style="{StaticResource ScreenLabel}" FontWeight="Bold" FontSize="12"/>

@@ -24,6 +24,8 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 - 点击左眼切换 DeepSeek 时立即刷新官方余额；点击右眼切换 Codex 时立即调用本机 app-server 查询额度。
 - 系统托盘支持显示机器人、查看详情、同步全部、开机自启动和退出；重复启动时只保留一个 Widget 实例。
 - Codex 任一周期剩余不高于 20%/10%，或 DeepSeek 余额不高于 10/5 时，通过 Windows 托盘发送分级提醒。
+- 点击机器人腹部屏幕打开当前 Provider 的七日趋势面板：Codex 显示每日 Token 柱状图，DeepSeek 显示每日余额折线图。
+- 趋势面板、机器人右键菜单和系统托盘均提供“测试 Windows 额度预警”和“预警设置”；阈值保存于当前用户本地配置。
 - Widget 无法连接本地 Service 时会尝试自动启动它；开发目录和同目录发布包都支持。
 
 ## 运行

@@ -31,11 +31,14 @@ public partial class MainWindow : Window
     private readonly HttpClient _http = new() { BaseAddress = new Uri(LocalAppStorage.ApiBaseUrl), Timeout = TimeSpan.FromSeconds(5) };
     private readonly DispatcherTimer _refreshTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
+    private readonly AlertSettings _alertSettings = AlertSettings.Load();
     private bool _refreshing;
     private bool _serviceStartAttempted;
     private int _codexNotificationLevel;
     private int _deepSeekNotificationLevel;
     private OverviewDto? _lastOverview;
+    private TrendWindow? _trendWindow;
+    private bool _showingChatGpt;
 
     public MainWindow()
     {
@@ -58,6 +61,8 @@ public partial class MainWindow : Window
             await SyncSelectedProviderAsync(chatGpt: true);
         else
             await RefreshAsync(false);
+        if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--trend", StringComparison.OrdinalIgnoreCase)))
+            OpenTrendWindow();
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)
@@ -101,12 +106,21 @@ public partial class MainWindow : Window
         }
         catch
         {
-            UpdatedText.Text = "SYNC FAIL";
+            await EnsureServiceStartedAsync();
+            try
+            {
+                var endpoint = chatGpt ? "api/codex/refresh" : "api/deepseek/refresh";
+                using var retry = await _http.PostAsync(endpoint, null);
+                retry.EnsureSuccessStatusCode();
+                await RefreshAsync(false);
+            }
+            catch { UpdatedText.Text = "SYNC FAIL"; }
         }
     }
 
     private void ShowProvider(bool chatGpt)
     {
+        _showingChatGpt = chatGpt;
         ChatGptPage.Visibility = chatGpt ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekPage.Visibility = chatGpt ? Visibility.Collapsed : Visibility.Visible;
         PageTitle.Text = chatGpt ? "CODEX" : "DEEPSEEK";
@@ -158,6 +172,7 @@ public partial class MainWindow : Window
         EvaluateNotifications(overview);
         UpdatedText.Text = DateTime.Now.ToString("HH:mm");
         StatusLight.Fill = CombineStatus(overview.ChatGPT.Percentage.Status, overview.DeepSeek.TotalBalance.Status);
+        _trendWindow?.UpdateOverview(overview);
     }
 
     private void RenderChatGpt(ChatGptQuotaDto data)
@@ -225,6 +240,8 @@ public partial class MainWindow : Window
         menu.Items.Add("显示机器人", null, (_, _) => Dispatcher.Invoke(() => { Show(); Activate(); }));
         menu.Items.Add("查看详情", null, (_, _) => Dispatcher.Invoke(ShowDetails));
         menu.Items.Add("立即同步全部", null, (_, _) => Dispatcher.Invoke(() => _ = SyncAllAsync()));
+        menu.Items.Add("测试额度预警", null, (_, _) => Dispatcher.Invoke(TestAlert));
+        menu.Items.Add("预警设置", null, (_, _) => Dispatcher.Invoke(ShowAlertSettings));
         var autoStart = new System.Windows.Forms.ToolStripMenuItem("开机自启动") { Checked = IsAutoStartEnabled(), CheckOnClick = true };
         autoStart.CheckedChanged += (_, _) => SetAutoStart(autoStart.Checked);
         menu.Items.Add(autoStart);
@@ -249,14 +266,25 @@ public partial class MainWindow : Window
 
     private void EvaluateNotifications(OverviewDto overview)
     {
+        if (!_alertSettings.Enabled)
+        {
+            _codexNotificationLevel = 0;
+            _deepSeekNotificationLevel = 0;
+            return;
+        }
         var codexRemaining = overview.ChatGPT.Windows?.Min(window => window.RemainingPercentage.Value) ?? overview.ChatGPT.Percentage.Value;
-        var codexLevel = codexRemaining switch { <= 10 => 2, <= 20 => 1, _ => 0 };
+        var criticalCodex = Math.Max(5, _alertSettings.CodexRemainingThreshold / 2);
+        var codexLevel = !codexRemaining.HasValue ? 0
+            : codexRemaining.Value <= criticalCodex ? 2
+            : codexRemaining.Value <= _alertSettings.CodexRemainingThreshold ? 1 : 0;
         if (codexLevel > _codexNotificationLevel && codexRemaining is int codexValue)
             ShowBalloon("Codex 配额提醒", $"当前最低周期仅剩 {codexValue}%", System.Windows.Forms.ToolTipIcon.Warning);
         _codexNotificationLevel = codexLevel;
 
         var balance = overview.DeepSeek.TotalBalance.Value;
-        var deepSeekLevel = balance switch { <= 5 => 2, <= 10 => 1, _ => 0 };
+        var deepSeekLevel = !balance.HasValue ? 0
+            : balance.Value <= _alertSettings.DeepSeekBalanceThreshold / 2 ? 2
+            : balance.Value <= _alertSettings.DeepSeekBalanceThreshold ? 1 : 0;
         if (deepSeekLevel > _deepSeekNotificationLevel && balance is decimal amount)
             ShowBalloon("DeepSeek 余额提醒", $"当前余额 {overview.DeepSeek.Currency} {amount:N2}", System.Windows.Forms.ToolTipIcon.Warning);
         _deepSeekNotificationLevel = deepSeekLevel;
@@ -268,6 +296,40 @@ public partial class MainWindow : Window
         _trayIcon.BalloonTipText = message;
         _trayIcon.BalloonTipIcon = icon;
         _trayIcon.ShowBalloonTip(5000);
+    }
+
+    private void TestAlert() => ShowBalloon(
+        "AI Usage Robot 测试预警",
+        $"Windows 额度预警正常。Codex 阈值 {_alertSettings.CodexRemainingThreshold}%，DeepSeek 阈值 {_alertSettings.DeepSeekBalanceThreshold:N2}。",
+        System.Windows.Forms.ToolTipIcon.Info);
+
+    private void ShowAlertSettings()
+    {
+        var dialog = new AlertSettingsWindow(this, _alertSettings);
+        if (dialog.ShowDialog() != true) return;
+        _codexNotificationLevel = 0;
+        _deepSeekNotificationLevel = 0;
+        if (_lastOverview is not null) EvaluateNotifications(_lastOverview);
+    }
+
+    private void ScreenFrame_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        OpenTrendWindow();
+    }
+
+    private void OpenTrendWindow()
+    {
+        if (_trendWindow is { IsLoaded: true } && _trendWindow.IsCodex == _showingChatGpt)
+        {
+            _trendWindow.Activate();
+            return;
+        }
+        _trendWindow?.Close();
+        _trendWindow = new TrendWindow(this, _showingChatGpt, _alertSettings, TestAlert, ShowAlertSettings);
+        _trendWindow.Closed += (_, _) => _trendWindow = null;
+        if (_lastOverview is not null) _trendWindow.UpdateOverview(_lastOverview);
+        _trendWindow.Show();
     }
 
     private void ShowDetails()
@@ -351,13 +413,17 @@ public partial class MainWindow : Window
         refresh.Click += async (_, _) => await SyncAllAsync();
         var details = new MenuItem { Header = "查看详情" };
         details.Click += (_, _) => ShowDetails();
+        var testAlert = new MenuItem { Header = "测试 Windows 额度预警" };
+        testAlert.Click += (_, _) => TestAlert();
+        var alertSettings = new MenuItem { Header = "额度预警设置…" };
+        alertSettings.Click += (_, _) => ShowAlertSettings();
         var credential = new MenuItem { Header = "设置 DeepSeek API Key…" };
         credential.Click += async (_, _) => await ShowCredentialDialogAsync();
         var topmost = new MenuItem { Header = "始终置顶", IsCheckable = true, IsChecked = true };
         topmost.Click += (_, _) => Topmost = topmost.IsChecked;
         var exit = new MenuItem { Header = "退出" };
         exit.Click += (_, _) => Close();
-        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(credential);
+        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(testAlert); menu.Items.Add(alertSettings); menu.Items.Add(credential);
         menu.Items.Add(new Separator()); menu.Items.Add(topmost); menu.Items.Add(new Separator()); menu.Items.Add(exit);
         ContextMenu = menu;
     }
