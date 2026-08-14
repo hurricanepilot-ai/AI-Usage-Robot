@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "AI Usage Robot - ChatGPT 配额采集器",
+  "version": "1.1.0",
+  "description": "定时读取 ChatGPT 页面已显示的配额信息并发送到本机 AI Usage Robot。",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "http://127.0.0.1:17860/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["parser.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "AI Usage Robot 配对",
+    "default_popup": "options.html"
+  }
+}

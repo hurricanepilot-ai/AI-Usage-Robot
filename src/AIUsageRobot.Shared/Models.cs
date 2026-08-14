@@ -1,0 +1,85 @@
+using System.Security.Cryptography;
+using System.Text;
+
+namespace AIUsageRobot.Shared;
+
+public enum DataStatus
+{
+    Unknown,
+    Fresh,
+    Stale,
+    Unavailable,
+    Offline,
+    AuthError
+}
+
+public sealed record Metric<T>(
+    T? Value,
+    DataStatus Status,
+    DateTimeOffset? UpdatedAt,
+    string? Message);
+
+public sealed record DeepSeekBalanceDto(
+    Metric<decimal?> TotalBalance,
+    string Currency,
+    bool? IsAvailable,
+    bool HasCredential);
+
+public sealed record ChatGptQuotaDto(
+    string? Model,
+    Metric<int?> Percentage,
+    string MetricSemantics,
+    string? Period,
+    DateTimeOffset? ResetAt,
+    string? ParserVersion);
+
+public sealed record OverviewDto(
+    ChatGptQuotaDto ChatGPT,
+    DeepSeekBalanceDto DeepSeek,
+    DateTimeOffset ServerTime);
+
+public sealed record SaveCredentialRequest(string ApiKey);
+
+public sealed record ChatGptQuotaInput(
+    string Provider,
+    string? Model,
+    int Value,
+    string MetricSemantics,
+    string? Period,
+    DateTimeOffset? ResetAt,
+    DateTimeOffset CollectedAt,
+    string ParserVersion,
+    string? RawText);
+
+public sealed record CreatePairingCodeResponse(string Code, DateTimeOffset ExpiresAt);
+public sealed record PairExtensionRequest(string Code);
+public sealed record PairExtensionResponse(string Token);
+
+public static class LocalAppStorage
+{
+    public const string ApiBaseUrl = "http://127.0.0.1:17860";
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("AIUsageRobot.LocalApi.v1");
+
+    public static string RootDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AIUsageRobot");
+
+    public static string DatabasePath => Path.Combine(RootDirectory, "usage.db");
+    public static string ApiTokenPath => Path.Combine(RootDirectory, "local-api-token.bin");
+
+    public static string GetOrCreateApiToken()
+    {
+        Directory.CreateDirectory(RootDirectory);
+        if (File.Exists(ApiTokenPath))
+        {
+            var protectedBytes = File.ReadAllBytes(ApiTokenPath);
+            var bytes = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser);
+            return Convert.ToBase64String(bytes);
+        }
+
+        var token = RandomNumberGenerator.GetBytes(32);
+        var encrypted = ProtectedData.Protect(token, Entropy, DataProtectionScope.CurrentUser);
+        File.WriteAllBytes(ApiTokenPath, encrypted);
+        return Convert.ToBase64String(token);
+    }
+}

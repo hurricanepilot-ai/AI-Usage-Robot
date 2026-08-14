@@ -1,0 +1,166 @@
+<Window x:Class="AIUsageRobot.Widget.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AI Usage Robot" Width="192.6" Height="216"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        UseLayoutRounding="True" Loaded="Window_Loaded" Closing="Window_Closing">
+    <Window.Resources>
+        <SolidColorBrush x:Key="Shell" Color="#D7A52D"/>
+        <SolidColorBrush x:Key="ShellLight" Color="#F0C95C"/>
+        <SolidColorBrush x:Key="ShellShadow" Color="#87631A"/>
+        <SolidColorBrush x:Key="Graphite" Color="#202829"/>
+        <SolidColorBrush x:Key="GraphiteLight" Color="#4C5655"/>
+        <SolidColorBrush x:Key="Edge" Color="#171C1D"/>
+        <SolidColorBrush x:Key="ScreenGreen" Color="#C5F8D7"/>
+        <Style x:Key="ScreenLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource ScreenGreen}"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+        </Style>
+        <Style x:Key="EyeButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Viewbox Stretch="Uniform">
+        <Grid x:Name="Robot" Width="320" Height="360" MouseLeftButtonDown="Robot_MouseLeftButtonDown">
+            <!-- Track modules sit behind the body and use repeated mechanical cleats. -->
+            <Border Width="72" Height="122" Margin="34,224,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    CornerRadius="12" Background="{StaticResource Graphite}" BorderBrush="{StaticResource Edge}" BorderThickness="4">
+                <Grid Margin="7">
+                    <Border CornerRadius="7" BorderBrush="#7E8986" BorderThickness="2"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Border Width="72" Height="122" Margin="0,224,34,0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    CornerRadius="12" Background="{StaticResource Graphite}" BorderBrush="{StaticResource Edge}" BorderThickness="4">
+                <Grid Margin="7">
+                    <Border CornerRadius="7" BorderBrush="#7E8986" BorderThickness="2"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                        <Path Data="M 0,8 L 13,0 L 26,8 L 39,0 L 52,8" Stroke="#909A97" StrokeThickness="5" Margin="0,3"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Arms rotate at the shoulder. The layered forearm gives a lighter, articulated silhouette. -->
+            <Grid x:Name="LeftArm" Width="52" Height="78" Margin="12,151,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" RenderTransformOrigin="0.78,0.15">
+                <Grid.RenderTransform><RotateTransform x:Name="LeftArmRotation" Angle="0"/></Grid.RenderTransform>
+                <Ellipse Width="24" Height="24" Margin="27,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Fill="{StaticResource GraphiteLight}" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
+                <Border Width="27" Height="43" Margin="12,13,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="7"
+                        Background="{StaticResource Shell}" BorderBrush="{StaticResource Edge}" BorderThickness="4" RenderTransformOrigin="0.5,0.5">
+                    <Border.RenderTransform><RotateTransform Angle="8"/></Border.RenderTransform>
+                    <Grid><Rectangle Width="3" Fill="{StaticResource ShellLight}" HorizontalAlignment="Left" Margin="5,6"/><Rectangle Height="3" Fill="{StaticResource ShellShadow}" VerticalAlignment="Bottom" Margin="5,0,5,6"/></Grid>
+                </Border>
+                <Border Width="29" Height="25" Margin="5,50,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="6"
+                        Background="{StaticResource Shell}" BorderBrush="{StaticResource Edge}" BorderThickness="4" RenderTransformOrigin="0.5,0.5">
+                    <Border.RenderTransform><RotateTransform Angle="-6"/></Border.RenderTransform>
+                </Border>
+            </Grid>
+            <Grid x:Name="RightArm" Width="52" Height="78" Margin="0,151,12,0" HorizontalAlignment="Right" VerticalAlignment="Top" RenderTransformOrigin="0.22,0.15">
+                <Grid.RenderTransform><RotateTransform x:Name="RightArmRotation" Angle="0"/></Grid.RenderTransform>
+                <Ellipse Width="24" Height="24" Margin="0,0,27,0" HorizontalAlignment="Right" VerticalAlignment="Top" Fill="{StaticResource GraphiteLight}" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
+                <Border Width="27" Height="43" Margin="0,13,12,0" HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="7"
+                        Background="{StaticResource Shell}" BorderBrush="{StaticResource Edge}" BorderThickness="4" RenderTransformOrigin="0.5,0.5">
+                    <Border.RenderTransform><RotateTransform Angle="-8"/></Border.RenderTransform>
+                    <Grid><Rectangle Width="3" Fill="{StaticResource ShellLight}" HorizontalAlignment="Right" Margin="5,6"/><Rectangle Height="3" Fill="{StaticResource ShellShadow}" VerticalAlignment="Bottom" Margin="5,0,5,6"/></Grid>
+                </Border>
+                <Border Width="29" Height="25" Margin="0,50,5,0" HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="6"
+                        Background="{StaticResource Shell}" BorderBrush="{StaticResource Edge}" BorderThickness="4" RenderTransformOrigin="0.5,0.5">
+                    <Border.RenderTransform><RotateTransform Angle="6"/></Border.RenderTransform>
+                </Border>
+            </Grid>
+
+            <!-- Compact trapezoidal torso with an inset live screen. -->
+            <Path Data="M 74,154 L 246,154 L 258,288 Q 258,300 246,300 L 74,300 Q 62,300 62,288 Z"
+                  Fill="{StaticResource Shell}" Stroke="{StaticResource Edge}" StrokeThickness="5"/>
+            <Path Data="M 77,160 L 243,160" Stroke="{StaticResource ShellLight}" StrokeThickness="5"/>
+            <Border Width="184" Height="116" Margin="68,173,68,0" VerticalAlignment="Top" CornerRadius="7"
+                    Background="#0D1718" BorderBrush="#765619" BorderThickness="5">
+                <Grid x:Name="ScreenFrame" Margin="12,9">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <DockPanel>
+                        <TextBlock x:Name="PageTitle" Text="DEEPSEEK" Style="{StaticResource ScreenLabel}" FontWeight="Bold" FontSize="12"/>
+                        <Ellipse x:Name="StatusLight" Width="7" Height="7" Fill="#E0B23D" DockPanel.Dock="Right"/>
+                    </DockPanel>
+                    <Grid Grid.Row="1">
+                        <StackPanel x:Name="ChatGptPage" Visibility="Collapsed" VerticalAlignment="Center">
+                            <TextBlock x:Name="ChatGptModelText" Text="Dynamic model" Style="{StaticResource ScreenLabel}" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="ChatGptQuotaText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="23" FontWeight="Bold"/>
+                            <ProgressBar x:Name="ChatGptQuotaBar" Height="5" Minimum="0" Maximum="100" Margin="0,1,0,3"/>
+                            <DockPanel><TextBlock Text="周期" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptPeriodText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
+                            <DockPanel><TextBlock Text="重置" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptResetText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
+                        </StackPanel>
+                        <StackPanel x:Name="DeepSeekPage" VerticalAlignment="Center">
+                            <TextBlock Text="API 余额" Style="{StaticResource ScreenLabel}" FontSize="9"/>
+                            <TextBlock x:Name="DeepSeekBalanceText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="24" FontWeight="Bold"/>
+                            <TextBlock x:Name="DeepSeekAvailabilityText" Text="等待本地服务" Style="{StaticResource ScreenLabel}" FontSize="8" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Grid>
+                    <DockPanel Grid.Row="2">
+                        <TextBlock x:Name="UpdatedText" Text="--:--" Style="{StaticResource ScreenLabel}" FontSize="8"/>
+                        <TextBlock Text="AUR-01" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right" Opacity="0.55"/>
+                    </DockPanel>
+                </Grid>
+            </Border>
+            <Ellipse Width="9" Height="9" Margin="75,160,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Fill="{StaticResource Graphite}"/>
+            <Ellipse Width="9" Height="9" Margin="0,160,75,0" HorizontalAlignment="Right" VerticalAlignment="Top" Fill="{StaticResource Graphite}"/>
+
+            <!-- Segmented neck and binocular head. -->
+            <Border Width="42" Height="21" Margin="139,132,139,0" VerticalAlignment="Top" Background="{StaticResource GraphiteLight}" BorderBrush="{StaticResource Edge}" BorderThickness="4" CornerRadius="4"/>
+            <Border Width="28" Height="22" Margin="146,112,146,0" VerticalAlignment="Top" Background="{StaticResource Shell}" BorderBrush="{StaticResource Edge}" BorderThickness="4" CornerRadius="3"/>
+            <Border Width="38" Height="18" Margin="141,96,141,0" VerticalAlignment="Top" Background="{StaticResource GraphiteLight}" BorderBrush="{StaticResource Edge}" BorderThickness="4" CornerRadius="6"/>
+            <Path Data="M 137,92 L 151,75 L 169,75 L 183,92 Z" Fill="{StaticResource Shell}" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
+
+            <Path Data="M 39,31 Q 42,15 60,12 L 134,12 Q 151,14 151,32 L 147,69 Q 145,84 128,87 L 61,87 Q 42,84 39,68 Z"
+                  Fill="{StaticResource Shell}" Stroke="{StaticResource Edge}" StrokeThickness="5"/>
+            <Path Data="M 169,12 L 260,12 Q 278,15 281,31 L 281,68 Q 278,84 259,87 L 191,87 Q 174,84 172,69 L 168,32 Q 168,19 169,12 Z"
+                  Fill="{StaticResource Shell}" Stroke="{StaticResource Edge}" StrokeThickness="5"/>
+            <Path Data="M 150,37 L 170,37 L 177,62 Q 174,75 160,77 Q 146,75 143,62 Z" Fill="{StaticResource GraphiteLight}" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
+
+            <Button x:Name="DeepSeekEyeButton" Width="92" Height="66" Margin="48,21,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Style="{StaticResource EyeButtonStyle}" Click="DeepSeekEyeButton_Click">
+                <Grid>
+                    <Ellipse Fill="#303A3B" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
+                    <Ellipse x:Name="DeepSeekEyeFill" Width="50" Height="50" Fill="#080A0A" Stroke="#D8E2DF" StrokeThickness="4"/>
+                    <Ellipse Width="15" Height="15" Fill="{StaticResource Edge}"/>
+                    <Ellipse Width="7" Height="7" Margin="0,0,15,15" Fill="#FFFFFF" Opacity="0.72"/>
+                </Grid>
+            </Button>
+            <Button x:Name="GptEyeButton" Width="92" Height="66" Margin="0,21,48,0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Style="{StaticResource EyeButtonStyle}" Click="GptEyeButton_Click">
+                <Grid>
+                    <Ellipse Fill="#303A3B" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
+                    <Ellipse x:Name="GptEyeFill" Width="50" Height="50" Fill="#080A0A" Stroke="#D8E2DF" StrokeThickness="4"/>
+                    <Ellipse Width="15" Height="15" Fill="{StaticResource Edge}"/>
+                    <Ellipse Width="7" Height="7" Margin="0,0,15,15" Fill="#FFFFFF" Opacity="0.72"/>
+                </Grid>
+            </Button>
+
+            <!-- Small original identification plate; no reference-character branding. -->
+            <Border Width="62" Height="16" Margin="129,304,129,0" VerticalAlignment="Top" CornerRadius="5" Background="{StaticResource Graphite}" BorderBrush="{StaticResource Edge}" BorderThickness="2">
+                <TextBlock Text="AI USAGE" Foreground="#E8DCA8" FontFamily="Consolas" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+        </Grid>
+    </Viewbox>
+</Window>
