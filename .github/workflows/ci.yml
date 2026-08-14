@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build
+        run: dotnet build AIUsageRobot.sln --configuration Release
+      - name: Test .NET
+        run: dotnet test AIUsageRobot.sln --configuration Release --no-build
+      - name: Test legacy extension parser
+        run: node --test extension/tests/parser.test.js

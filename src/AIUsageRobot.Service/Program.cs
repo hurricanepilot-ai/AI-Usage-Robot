@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls(LocalAppStorage.ApiBaseUrl);
 builder.Services.AddSingleton<BalanceRepository>();
 builder.Services.AddSingleton<ChatGptQuotaRepository>();
+builder.Services.AddSingleton<MonitoringHistoryRepository>();
 builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 builder.Services.AddHttpClient<DeepSeekBalanceClient>(client =>
 {
@@ -22,6 +23,7 @@ builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequired
 var app = builder.Build();
 await app.Services.GetRequiredService<BalanceRepository>().InitializeAsync();
 await app.Services.GetRequiredService<ChatGptQuotaRepository>().InitializeAsync();
+await app.Services.GetRequiredService<MonitoringHistoryRepository>().InitializeAsync();
 
 var localToken = LocalAppStorage.GetOrCreateApiToken();
 app.Use(async (context, next) =>
@@ -40,6 +42,18 @@ app.Use(async (context, next) =>
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/api/overview", async (BalanceState deepSeek, ChatGptQuotaState chatGpt, CancellationToken ct) =>
     Results.Ok(new OverviewDto(await chatGpt.GetAsync(ct), await deepSeek.GetOverviewAsync(ct), DateTimeOffset.UtcNow)));
+
+app.MapGet("/api/history/{provider}", async (
+    string provider,
+    int? hours,
+    MonitoringHistoryRepository history,
+    CancellationToken ct) =>
+{
+    var normalized = provider.ToLowerInvariant();
+    if (normalized is not ("codex" or "deepseek"))
+        return Results.BadRequest(new { error = "provider 必须是 codex 或 deepseek" });
+    return Results.Ok(await history.GetAsync(normalized, hours ?? 24 * 7, ct));
+});
 
 app.MapPost("/api/codex/refresh", async (
     CodexAppServerClient client,

@@ -5,42 +5,73 @@ namespace AIUsageRobot.Service;
 
 public static class CodexRateLimitParser
 {
-    public const string SourceVersion = "codex-app-server-v1";
+    public const string SourceVersion = "codex-app-server-v2";
 
-    public static bool TryParse(JsonElement payload, DateTimeOffset collectedAt, out ChatGptQuotaInput? quota)
+    public static bool TryParseSnapshot(JsonElement payload, DateTimeOffset collectedAt, out CodexQuotaSnapshotInput? quota)
     {
         quota = null;
         if (!TrySelectSnapshot(payload, out var snapshot)) return false;
 
-        var windows = new List<(JsonElement Window, long Duration)>();
-        AddWindow(snapshot, "primary", windows);
-        AddWindow(snapshot, "secondary", windows);
+        var windows = new List<CodexQuotaWindowInput>();
+        AddParsedWindow(snapshot, "primary", "primary", windows);
+        AddParsedWindow(snapshot, "secondary", "secondary", windows);
         if (windows.Count == 0) return false;
-
-        var selected = windows.MaxBy(item => item.Duration);
-        if (!TryReadNumber(selected.Window, "usedPercent", "used_percent", out var usedPercent)) return false;
-
-        var remaining = Math.Clamp(100 - (int)Math.Round(usedPercent, MidpointRounding.AwayFromZero), 0, 100);
-        var resetAt = TryReadNumber(selected.Window, "resetsAt", "resets_at", out var resetSeconds)
-            ? DateTimeOffset.FromUnixTimeSeconds((long)resetSeconds)
-            : (DateTimeOffset?)null;
 
         var limitName = ReadString(snapshot, "limitName", "limit_name");
         var planType = ReadString(snapshot, "planType", "plan_type");
         var model = string.IsNullOrWhiteSpace(limitName) ? "Codex" : limitName;
         if (!string.IsNullOrWhiteSpace(planType)) model = $"{model} · {planType}";
 
+        quota = new CodexQuotaSnapshotInput(model, windows, collectedAt, SourceVersion);
+        return true;
+    }
+
+    public static bool TryParse(JsonElement payload, DateTimeOffset collectedAt, out ChatGptQuotaInput? quota)
+    {
+        quota = null;
+        if (!TryParseSnapshot(payload, collectedAt, out var snapshot) || snapshot is null) return false;
+        var selected = snapshot.Windows.MaxBy(item => ParsePeriodMinutes(item.Period))!;
+
         quota = new ChatGptQuotaInput(
             "chatgpt",
-            model,
-            remaining,
+            snapshot.Model,
+            selected.RemainingPercentage,
             "remaining",
-            FormatPeriod(selected.Duration),
-            resetAt,
+            selected.Period,
+            selected.ResetAt,
             collectedAt,
             SourceVersion,
             null);
         return true;
+    }
+
+    private static void AddParsedWindow(JsonElement snapshot, string propertyName, string displayName, List<CodexQuotaWindowInput> windows)
+    {
+        if (!snapshot.TryGetProperty(propertyName, out var window) || window.ValueKind != JsonValueKind.Object) return;
+        if (!TryReadNumber(window, "usedPercent", "used_percent", out var usedPercent)) return;
+        var duration = TryReadNumber(window, "windowDurationMins", "window_duration_mins", out var durationValue)
+            ? Math.Max(0, (long)durationValue)
+            : 0;
+        var resetAt = TryReadNumber(window, "resetsAt", "resets_at", out var resetSeconds)
+            ? DateTimeOffset.FromUnixTimeSeconds((long)resetSeconds)
+            : (DateTimeOffset?)null;
+        var remaining = Math.Clamp(100 - (int)Math.Round(usedPercent, MidpointRounding.AwayFromZero), 0, 100);
+        windows.Add(new CodexQuotaWindowInput(displayName, remaining, FormatPeriod(duration), resetAt));
+    }
+
+    private static long ParsePeriodMinutes(string? period)
+    {
+        if (string.IsNullOrWhiteSpace(period)) return 0;
+        var parts = period.Split('_', 2);
+        if (parts.Length != 2 || !long.TryParse(parts[0], out var value)) return 0;
+        return parts[1] switch
+        {
+            "minutes" => value,
+            "hours" => value * 60,
+            "days" => value * 1_440,
+            "weeks" => value * 10_080,
+            _ => 0
+        };
     }
 
     private static bool TrySelectSnapshot(JsonElement payload, out JsonElement snapshot)

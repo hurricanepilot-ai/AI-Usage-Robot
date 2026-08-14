@@ -4,6 +4,7 @@ namespace AIUsageRobot.Service;
 
 public sealed class BalanceState(
     BalanceRepository repository,
+    MonitoringHistoryRepository history,
     ICredentialStore credentials,
     DeepSeekBalanceClient client,
     ILogger<BalanceState> logger)
@@ -29,6 +30,8 @@ public sealed class BalanceState(
             {
                 var balance = await client.GetAsync(apiKey, cancellationToken);
                 await repository.SaveAsync(balance, cancellationToken);
+                await history.SaveAsync(new ProviderSnapshotDto(
+                    "deepseek", "balance", balance.Total, balance.Currency, balance.UpdatedAt), cancellationToken);
                 _transientStatus = null;
                 _message = null;
             }
@@ -76,14 +79,16 @@ public sealed class BalanceState(
     }
 }
 
-public sealed class BalanceRefreshWorker(BalanceState state, ILogger<BalanceRefreshWorker> logger) : BackgroundService
+public sealed class BalanceRefreshWorker(
+    BalanceState state,
+    IConfiguration configuration,
+    ILogger<BalanceRefreshWorker> logger) : BackgroundService
 {
-    public static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(5);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await RefreshSafelyAsync(stoppingToken);
-        using var timer = new PeriodicTimer(RefreshInterval);
+        var minutes = Math.Clamp(configuration.GetValue("DeepSeek:RefreshIntervalMinutes", 5), 1, 60);
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(minutes));
         while (await timer.WaitForNextTickAsync(stoppingToken))
             await RefreshSafelyAsync(stoppingToken);
     }

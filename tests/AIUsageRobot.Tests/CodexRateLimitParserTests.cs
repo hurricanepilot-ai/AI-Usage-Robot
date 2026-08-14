@@ -35,6 +35,11 @@ public sealed class CodexRateLimitParserTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_800_000_100), quota.ResetAt);
         Assert.Equal("Codex · pro", quota.Model);
         Assert.Equal(CodexRateLimitParser.SourceVersion, quota.ParserVersion);
+
+        Assert.True(CodexRateLimitParser.TryParseSnapshot(document.RootElement, DateTimeOffset.UnixEpoch, out var snapshot));
+        Assert.Equal(2, snapshot!.Windows.Count);
+        Assert.Equal(80, snapshot.Windows.Single(window => window.Name == "primary").RemainingPercentage);
+        Assert.Equal(44, snapshot.Windows.Single(window => window.Name == "secondary").RemainingPercentage);
     }
 
     [Fact]

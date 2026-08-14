@@ -108,6 +108,7 @@
                             <TextBlock x:Name="ChatGptModelText" Text="Dynamic model" Style="{StaticResource ScreenLabel}" FontSize="10" TextTrimming="CharacterEllipsis"/>
                             <TextBlock x:Name="ChatGptQuotaText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="23" FontWeight="Bold"/>
                             <ProgressBar x:Name="ChatGptQuotaBar" Height="5" Minimum="0" Maximum="100" Margin="0,1,0,3"/>
+                            <DockPanel><TextBlock Text="短周期" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptShortQuotaText" Text="--" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
                             <DockPanel><TextBlock Text="周期" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptPeriodText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
                             <DockPanel><TextBlock Text="重置" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptResetText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
                         </StackPanel>

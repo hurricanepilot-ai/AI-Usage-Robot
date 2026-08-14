@@ -1,5 +1,6 @@
 using AIUsageRobot.Shared;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -11,17 +12,30 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using Microsoft.Win32;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Button = System.Windows.Controls.Button;
+using Color = System.Windows.Media.Color;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using MessageBox = System.Windows.MessageBox;
+using Orientation = System.Windows.Controls.Orientation;
 
 namespace AIUsageRobot.Widget;
 
 public partial class MainWindow : Window
 {
-    private static readonly Brush DeepSeekActiveBrush = new SolidColorBrush(Color.FromRgb(47, 174, 255));
-    private static readonly Brush GptActiveBrush = new SolidColorBrush(Color.FromRgb(255, 70, 82));
-    private static readonly Brush InactiveEyeBrush = new SolidColorBrush(Color.FromRgb(8, 10, 10));
+    private static readonly System.Windows.Media.Brush DeepSeekActiveBrush = new SolidColorBrush(Color.FromRgb(47, 174, 255));
+    private static readonly System.Windows.Media.Brush GptActiveBrush = new SolidColorBrush(Color.FromRgb(255, 70, 82));
+    private static readonly System.Windows.Media.Brush InactiveEyeBrush = new SolidColorBrush(Color.FromRgb(8, 10, 10));
     private readonly HttpClient _http = new() { BaseAddress = new Uri(LocalAppStorage.ApiBaseUrl), Timeout = TimeSpan.FromSeconds(5) };
     private readonly DispatcherTimer _refreshTimer = new() { Interval = TimeSpan.FromSeconds(30) };
+    private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private bool _refreshing;
+    private bool _serviceStartAttempted;
+    private int _codexNotificationLevel;
+    private int _deepSeekNotificationLevel;
+    private OverviewDto? _lastOverview;
 
     public MainWindow()
     {
@@ -30,6 +44,7 @@ public partial class MainWindow : Window
         catch { }
         _refreshTimer.Tick += async (_, _) => await RefreshAsync(false);
         BuildContextMenu();
+        _trayIcon = BuildTrayIcon();
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -50,6 +65,8 @@ public partial class MainWindow : Window
         _refreshTimer.Stop();
         SavePosition();
         _http.Dispose();
+        _trayIcon.Visible = false;
+        _trayIcon.Dispose();
     }
 
     private void Robot_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -123,6 +140,7 @@ public partial class MainWindow : Window
         }
         catch
         {
+            await EnsureServiceStartedAsync();
             ChatGptQuotaText.Text = "Offline";
             DeepSeekBalanceText.Text = "Offline";
             DeepSeekAvailabilityText.Text = "本地服务未运行";
@@ -134,8 +152,10 @@ public partial class MainWindow : Window
 
     private void Render(OverviewDto overview)
     {
+        _lastOverview = overview;
         RenderChatGpt(overview.ChatGPT);
         RenderDeepSeek(overview.DeepSeek);
+        EvaluateNotifications(overview);
         UpdatedText.Text = DateTime.Now.ToString("HH:mm");
         StatusLight.Fill = CombineStatus(overview.ChatGPT.Percentage.Status, overview.DeepSeek.TotalBalance.Status);
     }
@@ -150,6 +170,12 @@ public partial class MainWindow : Window
         ChatGptModelText.Text = data.Model ?? "动态模型 · Unknown";
         ChatGptPeriodText.Text = FormatPeriod(data.Period);
         ChatGptResetText.Text = data.ResetAt?.ToLocalTime().ToString("MM/dd HH:mm") ?? "Unknown";
+        var shortWindow = data.Windows is { Count: > 1 }
+            ? data.Windows.MinBy(window => PeriodMinutes(window.Period))
+            : null;
+        ChatGptShortQuotaText.Text = shortWindow?.RemainingPercentage.Value is int shortValue
+            ? $"{shortValue}% / {FormatPeriod(shortWindow.Period)}"
+            : "--";
         if (data.Percentage.Status is DataStatus.Stale or DataStatus.Unavailable)
             ChatGptModelText.Text = $"{data.Percentage.Status.ToString().ToUpperInvariant()} · {data.Model ?? "Unknown"}";
     }
@@ -163,7 +189,7 @@ public partial class MainWindow : Window
         DeepSeekAvailabilityText.Text = data.TotalBalance.Message ?? (data.IsAvailable == true ? "API 可用" : "余额不可用");
     }
 
-    private static Brush CombineStatus(DataStatus chatGpt, DataStatus deepSeek)
+    private static System.Windows.Media.Brush CombineStatus(DataStatus chatGpt, DataStatus deepSeek)
     {
         var statuses = new[] { chatGpt, deepSeek };
         if (statuses.Contains(DataStatus.Offline) || statuses.Contains(DataStatus.AuthError)) return Brushes.IndianRed;
@@ -180,6 +206,137 @@ public partial class MainWindow : Window
         return $"{parts[0]} {parts[1] switch { "minutes" => "分钟", "hours" => "小时", "days" => "天", "weeks" => "周", "months" => "月", _ => parts[1] }}";
     }
 
+    private static long PeriodMinutes(string? period)
+    {
+        var parts = period?.Split('_', 2);
+        if (parts is not { Length: 2 } || !long.TryParse(parts[0], out var value)) return long.MaxValue;
+        return parts[1] switch { "minutes" => value, "hours" => value * 60, "days" => value * 1_440, "weeks" => value * 10_080, _ => long.MaxValue };
+    }
+
+    private System.Windows.Forms.NotifyIcon BuildTrayIcon()
+    {
+        var tray = new System.Windows.Forms.NotifyIcon
+        {
+            Icon = System.Drawing.SystemIcons.Application,
+            Text = "AI Usage Robot",
+            Visible = true
+        };
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("显示机器人", null, (_, _) => Dispatcher.Invoke(() => { Show(); Activate(); }));
+        menu.Items.Add("查看详情", null, (_, _) => Dispatcher.Invoke(ShowDetails));
+        menu.Items.Add("立即同步全部", null, (_, _) => Dispatcher.Invoke(() => _ = SyncAllAsync()));
+        var autoStart = new System.Windows.Forms.ToolStripMenuItem("开机自启动") { Checked = IsAutoStartEnabled(), CheckOnClick = true };
+        autoStart.CheckedChanged += (_, _) => SetAutoStart(autoStart.Checked);
+        menu.Items.Add(autoStart);
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(Close));
+        tray.ContextMenuStrip = menu;
+        tray.DoubleClick += (_, _) => Dispatcher.Invoke(() => { Show(); Activate(); });
+        return tray;
+    }
+
+    private async Task SyncAllAsync()
+    {
+        try
+        {
+            await Task.WhenAll(
+                _http.PostAsync("api/deepseek/refresh", null),
+                _http.PostAsync("api/codex/refresh", null));
+            await RefreshAsync(false);
+        }
+        catch { UpdatedText.Text = "SYNC FAIL"; }
+    }
+
+    private void EvaluateNotifications(OverviewDto overview)
+    {
+        var codexRemaining = overview.ChatGPT.Windows?.Min(window => window.RemainingPercentage.Value) ?? overview.ChatGPT.Percentage.Value;
+        var codexLevel = codexRemaining switch { <= 10 => 2, <= 20 => 1, _ => 0 };
+        if (codexLevel > _codexNotificationLevel && codexRemaining is int codexValue)
+            ShowBalloon("Codex 配额提醒", $"当前最低周期仅剩 {codexValue}%", System.Windows.Forms.ToolTipIcon.Warning);
+        _codexNotificationLevel = codexLevel;
+
+        var balance = overview.DeepSeek.TotalBalance.Value;
+        var deepSeekLevel = balance switch { <= 5 => 2, <= 10 => 1, _ => 0 };
+        if (deepSeekLevel > _deepSeekNotificationLevel && balance is decimal amount)
+            ShowBalloon("DeepSeek 余额提醒", $"当前余额 {overview.DeepSeek.Currency} {amount:N2}", System.Windows.Forms.ToolTipIcon.Warning);
+        _deepSeekNotificationLevel = deepSeekLevel;
+    }
+
+    private void ShowBalloon(string title, string message, System.Windows.Forms.ToolTipIcon icon)
+    {
+        _trayIcon.BalloonTipTitle = title;
+        _trayIcon.BalloonTipText = message;
+        _trayIcon.BalloonTipIcon = icon;
+        _trayIcon.ShowBalloonTip(5000);
+    }
+
+    private void ShowDetails()
+    {
+        if (_lastOverview is null) return;
+        var codex = _lastOverview.ChatGPT;
+        var orderedWindows = codex.Windows?.OrderBy(window => PeriodMinutes(window.Period)).ToArray();
+        var windows = orderedWindows is { Length: > 0 }
+            ? string.Join(Environment.NewLine, orderedWindows.Select((window, index) =>
+                $"{(orderedWindows.Length == 1 ? "配额" : index == 0 ? "短周期" : "长周期")}: {window.RemainingPercentage.Value?.ToString() ?? "--"}% · {FormatPeriod(window.Period)} · 重置 {window.ResetAt?.ToLocalTime():MM/dd HH:mm}"))
+            : "暂无配额窗口";
+        var usage = codex.Usage is null
+            ? "暂无 token 使用统计"
+            : $"累计 tokens: {codex.Usage.LifetimeTokens:N0}\n峰值日: {codex.Usage.PeakDailyTokens:N0}\n当前连续使用: {codex.Usage.CurrentStreakDays ?? 0} 天";
+        var deepSeek = _lastOverview.DeepSeek.TotalBalance.Value is decimal balance
+            ? $"{_lastOverview.DeepSeek.Currency} {balance:N2}"
+            : _lastOverview.DeepSeek.TotalBalance.Status.ToString();
+        MessageBox.Show(this, $"Codex\n{windows}\n\n{usage}\n\nDeepSeek\n余额: {deepSeek}", "AI Usage Robot 详情",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private static bool IsAutoStartEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+        return key?.GetValue("AIUsageRobot") is string;
+    }
+
+    private static void SetAutoStart(bool enabled)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+        if (enabled)
+            key.SetValue("AIUsageRobot", $"\"{Environment.ProcessPath}\"");
+        else
+            key.DeleteValue("AIUsageRobot", false);
+    }
+
+    private async Task EnsureServiceStartedAsync()
+    {
+        if (_serviceStartAttempted) return;
+        _serviceStartAttempted = true;
+        var executable = Path.Combine(AppContext.BaseDirectory, "AIUsageRobot.Service.exe");
+        ProcessStartInfo? startInfo = File.Exists(executable)
+            ? new ProcessStartInfo(executable)
+            : FindServiceProject() is string project
+                ? new ProcessStartInfo("dotnet") { ArgumentList = { "run", "--project", project, "--no-launch-profile" } }
+                : null;
+        if (startInfo is null) return;
+        startInfo.UseShellExecute = false;
+        startInfo.CreateNoWindow = true;
+        startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+        try
+        {
+            Process.Start(startInfo);
+            await Task.Delay(1500);
+        }
+        catch { }
+    }
+
+    private static string? FindServiceProject()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var index = 0; index < 8 && directory is not null; index++, directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, "src", "AIUsageRobot.Service", "AIUsageRobot.Service.csproj");
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
     private void BuildContextMenu()
     {
         var menu = new ContextMenu();
@@ -191,14 +348,16 @@ public partial class MainWindow : Window
         menu.Items.Add(chatGptPage);
         menu.Items.Add(new Separator());
         var refresh = new MenuItem { Header = "立即刷新" };
-        refresh.Click += async (_, _) => await RefreshAsync(true);
+        refresh.Click += async (_, _) => await SyncAllAsync();
+        var details = new MenuItem { Header = "查看详情" };
+        details.Click += (_, _) => ShowDetails();
         var credential = new MenuItem { Header = "设置 DeepSeek API Key…" };
         credential.Click += async (_, _) => await ShowCredentialDialogAsync();
         var topmost = new MenuItem { Header = "始终置顶", IsCheckable = true, IsChecked = true };
         topmost.Click += (_, _) => Topmost = topmost.IsChecked;
         var exit = new MenuItem { Header = "退出" };
         exit.Click += (_, _) => Close();
-        menu.Items.Add(refresh); menu.Items.Add(credential);
+        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(credential);
         menu.Items.Add(new Separator()); menu.Items.Add(topmost); menu.Items.Add(new Separator()); menu.Items.Add(exit);
         ContextMenu = menu;
     }

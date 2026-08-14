@@ -129,10 +129,22 @@ public sealed class CodexAppServerClient(
         if (!await _refreshGate.WaitAsync(0, cancellationToken)) return;
         try
         {
+            var collectedAt = DateTimeOffset.UtcNow;
             var result = await SendRequestAsync("account/rateLimits/read", null, cancellationToken);
-            if (!CodexRateLimitParser.TryParse(result, DateTimeOffset.UtcNow, out var quota) || quota is null)
+            if (!CodexRateLimitParser.TryParseSnapshot(result, collectedAt, out var quota) || quota is null)
                 throw new InvalidDataException("Codex 返回的额度数据中没有可用窗口。");
             await quotaState.SaveAsync(quota, cancellationToken);
+
+            try
+            {
+                var usageResult = await SendRequestAsync("account/usage/read", null, cancellationToken);
+                if (CodexUsageParser.TryParse(usageResult, collectedAt, out var usage) && usage is not null)
+                    await quotaState.SaveUsageAsync(usage, cancellationToken);
+            }
+            catch (Exception exception) when (exception is TimeoutException or InvalidOperationException or InvalidDataException)
+            {
+                logger.LogDebug(exception, "Codex account usage is unavailable in this app-server version.");
+            }
         }
         finally
         {

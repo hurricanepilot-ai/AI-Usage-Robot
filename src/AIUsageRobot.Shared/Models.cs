@@ -25,13 +25,34 @@ public sealed record DeepSeekBalanceDto(
     bool? IsAvailable,
     bool HasCredential);
 
+public sealed record CodexQuotaWindowDto(
+    string Name,
+    Metric<int?> RemainingPercentage,
+    string? Period,
+    DateTimeOffset? ResetAt);
+
+public sealed record CodexDailyUsageDto(
+    DateOnly StartDate,
+    long Tokens);
+
+public sealed record CodexUsageSummaryDto(
+    long? LifetimeTokens,
+    long? PeakDailyTokens,
+    int? CurrentStreakDays,
+    int? LongestStreakDays,
+    long? LongestRunningTurnSeconds,
+    IReadOnlyList<CodexDailyUsageDto> DailyUsage,
+    DateTimeOffset? UpdatedAt);
+
 public sealed record ChatGptQuotaDto(
     string? Model,
     Metric<int?> Percentage,
     string MetricSemantics,
     string? Period,
     DateTimeOffset? ResetAt,
-    string? ParserVersion);
+    string? ParserVersion,
+    IReadOnlyList<CodexQuotaWindowDto>? Windows = null,
+    CodexUsageSummaryDto? Usage = null);
 
 public sealed record OverviewDto(
     ChatGptQuotaDto ChatGPT,
@@ -50,6 +71,34 @@ public sealed record ChatGptQuotaInput(
     DateTimeOffset CollectedAt,
     string ParserVersion,
     string? RawText);
+
+public sealed record CodexQuotaWindowInput(
+    string Name,
+    int RemainingPercentage,
+    string? Period,
+    DateTimeOffset? ResetAt);
+
+public sealed record CodexQuotaSnapshotInput(
+    string? Model,
+    IReadOnlyList<CodexQuotaWindowInput> Windows,
+    DateTimeOffset CollectedAt,
+    string ParserVersion);
+
+public sealed record CodexUsageInput(
+    long? LifetimeTokens,
+    long? PeakDailyTokens,
+    int? CurrentStreakDays,
+    int? LongestStreakDays,
+    long? LongestRunningTurnSeconds,
+    IReadOnlyList<CodexDailyUsageDto> DailyUsage,
+    DateTimeOffset CollectedAt);
+
+public sealed record ProviderSnapshotDto(
+    string Provider,
+    string Metric,
+    decimal Value,
+    string Unit,
+    DateTimeOffset CollectedAt);
 
 public sealed record CreatePairingCodeResponse(string Code, DateTimeOffset ExpiresAt);
 public sealed record PairExtensionRequest(string Code);

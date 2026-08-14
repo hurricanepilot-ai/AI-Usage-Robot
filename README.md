@@ -15,10 +15,16 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 - Service 维持本机 Codex app-server 长连接，通过 `account/rateLimits/read` 查询额度，并监听 `account/rateLimits/updated` 更新事件；不读取浏览器 Cookie、Session Token 或聊天内容。
 - 腹部屏幕只保留 Codex / DeepSeek 两个视图；不自动轮播、不响应滚轮。左眼激活为蓝色并将左臂向上旋转 180°，显示 DeepSeek；右眼激活为红色并将右臂向上旋转 180°，显示 Codex；未激活眼睛为黑色。
 - Codex 配额保存计划类型、剩余百分比、周期、重置时间、采集时间和数据源版本。
+- Codex 同时保存并显示短周期与长周期额度窗口，不再只选择最长周期。
+- 支持 Codex app-server `account/usage/read`：保存累计 token、峰值日、连续使用天数及最近 31 天每日用量；旧版 app-server 不支持时自动降级，不影响配额同步。
+- Codex 与 DeepSeek 每次成功同步都会写入统一 SQLite 历史快照，可通过 `/api/history/codex` 与 `/api/history/deepseek` 查询。
 - 配额数据按 `<15 分钟`、`15 分钟～24 小时`、`>24 小时` 分别显示 Fresh、Stale、Unavailable。
 - Codex Service 启动时立即查询，收到 app-server 更新事件时重新查询，并每 5 分钟主动校准一次。
 - DeepSeek Service 启动时立即查询官方余额接口，之后按固定 5 分钟周期刷新；网络请求耗时不会累积到下一个周期。
 - 点击左眼切换 DeepSeek 时立即刷新官方余额；点击右眼切换 Codex 时立即调用本机 app-server 查询额度。
+- 系统托盘支持显示机器人、查看详情、同步全部、开机自启动和退出；重复启动时只保留一个 Widget 实例。
+- Codex 任一周期剩余不高于 20%/10%，或 DeepSeek 余额不高于 10/5 时，通过 Windows 托盘发送分级提醒。
+- Widget 无法连接本地 Service 时会尝试自动启动它；开发目录和同目录发布包都支持。
 
 ## 运行
 
@@ -44,4 +50,8 @@ dotnet run --project src/AIUsageRobot.Widget
 dotnet test AIUsageRobot.sln
 ```
 
-后续阶段将按方案继续加入 DeepSeek Proxy/usage、Pricing、托盘与设置面板。
+> `account/rateLimits/read` 与 `account/usage/read` 属于本机 Codex app-server 协议，不是 OpenAI 公网 API。项目按当前本机 schema 做兼容解析，并在方法不可用时降级。
+
+## 项目地址
+
+https://github.com/hurricanepilot-ai/AI-Usage-Robot
