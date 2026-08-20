@@ -131,6 +131,7 @@ public partial class MainWindow : Window
         GptEyeFill.Fill = chatGpt ? GptActiveBrush : InactiveEyeBrush;
         AnimateArm(LeftArmRotation, chatGpt ? 0 : 180);
         AnimateArm(RightArmRotation, chatGpt ? -180 : 0);
+        UpdateResetText();
     }
 
     private static void AnimateArm(RotateTransform transform, double targetAngle)
@@ -160,7 +161,9 @@ public partial class MainWindow : Window
             await EnsureServiceStartedAsync();
             ChatGptQuotaText.Text = "Offline";
             DeepSeekBalanceText.Text = "Offline";
-            DeepSeekAvailabilityText.Text = "本地服务未运行";
+            ChatGptQuotaBar.Value = 0;
+            DeepSeekBalanceBar.IsIndeterminate = false;
+            DeepSeekBalanceBar.Value = 0;
             UpdatedText.Text = "SERVICE";
             StatusLight.Fill = Brushes.IndianRed;
         }
@@ -173,7 +176,7 @@ public partial class MainWindow : Window
         RenderChatGpt(overview.ChatGPT);
         RenderDeepSeek(overview.DeepSeek);
         EvaluateNotifications(overview);
-        UpdatedText.Text = DateTime.Now.ToString("HH:mm");
+        UpdateResetText();
         StatusLight.Fill = CombineStatus(overview.ChatGPT.Percentage.Status, overview.DeepSeek.TotalBalance.Status);
         _trendWindow?.UpdateOverview(overview);
     }
@@ -185,17 +188,6 @@ public partial class MainWindow : Window
         var display = value is int percentage ? $"{semanticLabel}{percentage}%" : data.Percentage.Status.ToString();
         ChatGptQuotaText.Text = display;
         ChatGptQuotaBar.Value = value ?? 0;
-        ChatGptModelText.Text = data.Model ?? "动态模型 · Unknown";
-        ChatGptPeriodText.Text = FormatPeriod(data.Period);
-        ChatGptResetText.Text = data.ResetAt?.ToLocalTime().ToString("MM/dd HH:mm") ?? "Unknown";
-        var shortWindow = data.Windows is { Count: > 1 }
-            ? data.Windows.MinBy(window => PeriodMinutes(window.Period))
-            : null;
-        ChatGptShortQuotaText.Text = shortWindow?.RemainingPercentage.Value is int shortValue
-            ? $"{shortValue}% / {FormatPeriod(shortWindow.Period)}"
-            : "--";
-        if (data.Percentage.Status is DataStatus.Stale or DataStatus.Unavailable)
-            ChatGptModelText.Text = $"{data.Percentage.Status.ToString().ToUpperInvariant()} · {data.Model ?? "Unknown"}";
     }
 
     private void RenderDeepSeek(DeepSeekBalanceDto data)
@@ -204,7 +196,23 @@ public partial class MainWindow : Window
             ? $"{(data.Currency == "CNY" ? "¥" : data.Currency + " ")}{amount:N2}"
             : data.TotalBalance.Status.ToString();
         DeepSeekBalanceText.Text = display;
-        DeepSeekAvailabilityText.Text = data.TotalBalance.Message ?? (data.IsAvailable == true ? "API 可用" : "余额不可用");
+        DeepSeekBalanceBar.IsIndeterminate = data.TotalBalance.Status == DataStatus.Fresh;
+        DeepSeekBalanceBar.Value = data.TotalBalance.Status == DataStatus.Fresh ? 100
+            : data.TotalBalance.Status == DataStatus.Stale ? 50 : 0;
+    }
+
+    private void UpdateResetText()
+    {
+        if (!_showingChatGpt)
+        {
+            UpdatedText.Text = "余额不重置";
+            return;
+        }
+
+        var resetAt = _lastOverview?.ChatGPT.ResetAt;
+        UpdatedText.Text = resetAt is null
+            ? "重置时间未知"
+            : $"下次重置 {resetAt.Value.ToLocalTime():MM/dd HH:mm}";
     }
 
     private static System.Windows.Media.Brush CombineStatus(DataStatus chatGpt, DataStatus deepSeek)

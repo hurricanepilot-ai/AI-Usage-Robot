@@ -101,28 +101,22 @@
                       ToolTip="点击打开七日趋势与额度预警">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <DockPanel>
-                        <TextBlock x:Name="PageTitle" Text="DEEPSEEK" Style="{StaticResource ScreenLabel}" FontWeight="Bold" FontSize="12"/>
+                        <TextBlock x:Name="PageTitle" Text="DEEPSEEK" Style="{StaticResource ScreenLabel}" FontWeight="Bold" FontSize="14"/>
                         <Ellipse x:Name="StatusLight" Width="7" Height="7" Fill="#E0B23D" DockPanel.Dock="Right"/>
                     </DockPanel>
                     <Grid Grid.Row="1">
                         <StackPanel x:Name="ChatGptPage" Visibility="Collapsed" VerticalAlignment="Center">
-                            <TextBlock x:Name="ChatGptModelText" Text="Dynamic model" Style="{StaticResource ScreenLabel}" FontSize="10" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock x:Name="ChatGptQuotaText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="23" FontWeight="Bold"/>
-                            <ProgressBar x:Name="ChatGptQuotaBar" Height="5" Minimum="0" Maximum="100" Margin="0,1,0,3"/>
-                            <DockPanel><TextBlock Text="短周期" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptShortQuotaText" Text="--" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
-                            <DockPanel><TextBlock Text="周期" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptPeriodText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
-                            <DockPanel><TextBlock Text="重置" Style="{StaticResource ScreenLabel}" FontSize="8"/><TextBlock x:Name="ChatGptResetText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right"/></DockPanel>
+                            <TextBlock x:Name="ChatGptQuotaText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="29" FontWeight="Bold" LineHeight="30"/>
+                            <ProgressBar x:Name="ChatGptQuotaBar" Height="8" Minimum="0" Maximum="100" Margin="0,3,0,1"/>
                         </StackPanel>
                         <StackPanel x:Name="DeepSeekPage" VerticalAlignment="Center">
-                            <TextBlock Text="API 余额" Style="{StaticResource ScreenLabel}" FontSize="9"/>
-                            <TextBlock x:Name="DeepSeekBalanceText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="24" FontWeight="Bold"/>
-                            <TextBlock x:Name="DeepSeekAvailabilityText" Text="等待本地服务" Style="{StaticResource ScreenLabel}" FontSize="8" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="DeepSeekBalanceText" Text="Unknown" Style="{StaticResource ScreenLabel}" FontSize="29" FontWeight="Bold" LineHeight="30"/>
+                            <ProgressBar x:Name="DeepSeekBalanceBar" Height="8" Minimum="0" Maximum="100" Margin="0,3,0,1"
+                                         ToolTip="DeepSeek 未提供额度上限，进度条表示同步状态"/>
                         </StackPanel>
                     </Grid>
-                    <DockPanel Grid.Row="2">
-                        <TextBlock x:Name="UpdatedText" Text="--:--" Style="{StaticResource ScreenLabel}" FontSize="8"/>
-                        <TextBlock Text="AUR-01" Style="{StaticResource ScreenLabel}" FontSize="8" DockPanel.Dock="Right" Opacity="0.55"/>
-                    </DockPanel>
+                    <TextBlock x:Name="UpdatedText" Grid.Row="2" Text="重置时间未知" Style="{StaticResource ScreenLabel}"
+                               FontSize="11" FontWeight="SemiBold"/>
                 </Grid>
             </Border>
             <Ellipse Width="9" Height="9" Margin="75,160,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Fill="{StaticResource Graphite}"/>

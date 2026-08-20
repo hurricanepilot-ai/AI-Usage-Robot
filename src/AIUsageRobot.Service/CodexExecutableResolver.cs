@@ -25,7 +25,7 @@ public sealed class CodexExecutableResolver(IConfiguration configuration, ILogge
             catch (Exception) { }
         }
 
-        return FindPackagedExecutable();
+        return FindPackagedExecutable() ?? FindCachedExecutable();
     }
 
     private string? FindPackagedExecutable()
@@ -47,6 +47,16 @@ public sealed class CodexExecutableResolver(IConfiguration configuration, ILogge
             logger.LogDebug(exception, "Unable to inspect the packaged Codex installation.");
             return null;
         }
+    }
+
+    private string? FindCachedExecutable()
+    {
+        var cachedPath = Path.Combine(LocalAppStorage.RootDirectory, "codex-runtime", "codex.exe");
+        if (!File.Exists(cachedPath)) return null;
+
+        logger.LogWarning(
+            "The installed Codex package is not directly accessible; using the last prepared local Codex CLI runtime.");
+        return cachedPath;
     }
 
     private string PrepareExecutable(string sourcePath)
