@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AIUsageRobot.Shared\AIUsageRobot.Shared.csproj" />
+    <ProjectReference Include="..\AIUsageRobot.Service\AIUsageRobot.Service.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -11,6 +12,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <StartupObject>AIUsageRobot.Widget.Program</StartupObject>
+    <AssemblyName>AIUsageRobot</AssemblyName>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
 </Project>

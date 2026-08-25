@@ -12,7 +12,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -34,6 +33,7 @@ public partial class MainWindow : Window
     private readonly AlertSettings _alertSettings = AlertSettings.Load();
     private bool _refreshing;
     private bool _serviceStartAttempted;
+    private Process? _serviceProcess;
     private int _codexNotificationLevel;
     private int _deepSeekNotificationLevel;
     private OverviewDto? _lastOverview;
@@ -73,8 +73,11 @@ public partial class MainWindow : Window
         _refreshTimer.Stop();
         SavePosition();
         _http.Dispose();
+        StopOwnedService();
+        var trayIcon = _trayIcon.Icon;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
+        trayIcon?.Dispose();
     }
 
     private void Robot_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -241,9 +244,12 @@ public partial class MainWindow : Window
 
     private System.Windows.Forms.NotifyIcon BuildTrayIcon()
     {
+        var executableIcon = !string.IsNullOrWhiteSpace(Environment.ProcessPath)
+            ? System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath)
+            : null;
         var tray = new System.Windows.Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = executableIcon ?? System.Drawing.SystemIcons.Application,
             Text = "AI Usage Robot",
             Visible = true
         };
@@ -253,9 +259,6 @@ public partial class MainWindow : Window
         menu.Items.Add("立即同步全部", null, (_, _) => Dispatcher.Invoke(() => _ = SyncAllAsync()));
         menu.Items.Add("测试额度预警", null, (_, _) => Dispatcher.Invoke(TestAlert));
         menu.Items.Add("预警设置", null, (_, _) => Dispatcher.Invoke(ShowAlertSettings));
-        var autoStart = new System.Windows.Forms.ToolStripMenuItem("开机自启动") { Checked = IsAutoStartEnabled(), CheckOnClick = true };
-        autoStart.CheckedChanged += (_, _) => SetAutoStart(autoStart.Checked);
-        menu.Items.Add(autoStart);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(Close));
         tray.ContextMenuStrip = menu;
@@ -367,52 +370,40 @@ public partial class MainWindow : Window
             MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    private static bool IsAutoStartEnabled()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        return key?.GetValue("AIUsageRobot") is string;
-    }
-
-    private static void SetAutoStart(bool enabled)
-    {
-        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        if (enabled)
-            key.SetValue("AIUsageRobot", $"\"{Environment.ProcessPath}\"");
-        else
-            key.DeleteValue("AIUsageRobot", false);
-    }
-
     private async Task EnsureServiceStartedAsync()
     {
         if (_serviceStartAttempted) return;
         _serviceStartAttempted = true;
-        var executable = Path.Combine(AppContext.BaseDirectory, "AIUsageRobot.Service.exe");
-        ProcessStartInfo? startInfo = File.Exists(executable)
-            ? new ProcessStartInfo(executable)
-            : FindServiceProject() is string project
-                ? new ProcessStartInfo("dotnet") { ArgumentList = { "run", "--project", project, "--no-launch-profile" } }
-                : null;
-        if (startInfo is null) return;
+        var executable = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable)) return;
+        var startInfo = new ProcessStartInfo(executable)
+        {
+            ArgumentList = { "--service", "--parent-pid", Environment.ProcessId.ToString() }
+        };
         startInfo.UseShellExecute = false;
         startInfo.CreateNoWindow = true;
         startInfo.WindowStyle = ProcessWindowStyle.Hidden;
         try
         {
-            Process.Start(startInfo);
+            _serviceProcess = Process.Start(startInfo);
             await Task.Delay(1500);
         }
         catch { }
     }
 
-    private static string? FindServiceProject()
+    private void StopOwnedService()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        for (var index = 0; index < 8 && directory is not null; index++, directory = directory.Parent)
+        try
         {
-            var candidate = Path.Combine(directory.FullName, "src", "AIUsageRobot.Service", "AIUsageRobot.Service.csproj");
-            if (File.Exists(candidate)) return candidate;
+            if (_serviceProcess is { HasExited: false })
+                _serviceProcess.Kill(entireProcessTree: true);
         }
-        return null;
+        catch { }
+        finally
+        {
+            _serviceProcess?.Dispose();
+            _serviceProcess = null;
+        }
     }
 
     private void BuildContextMenu()

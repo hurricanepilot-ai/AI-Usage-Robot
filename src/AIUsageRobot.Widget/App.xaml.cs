@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Windows;
+using Microsoft.Win32;
 
 namespace AIUsageRobot.Widget;
 
@@ -13,6 +14,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        DisableLegacyAutoStart();
         _mutex = new Mutex(true, MutexName, out var isFirstInstance);
         if (!isFirstInstance)
         {
@@ -28,6 +30,20 @@ public partial class App : System.Windows.Application
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
+    }
+
+    private static void DisableLegacyAutoStart()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+            key?.DeleteValue("AIUsageRobot", false);
+        }
+        catch
+        {
+            // A legacy entry must never prevent a manual launch.
+        }
     }
 
     private void ListenForActivation(CancellationToken cancellationToken)

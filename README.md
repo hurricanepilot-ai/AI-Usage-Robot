@@ -22,21 +22,22 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 - Codex Service 启动时立即查询，收到 app-server 更新事件时重新查询，并每 5 分钟主动校准一次。
 - DeepSeek Service 启动时立即查询官方余额接口，之后按固定 5 分钟周期刷新；网络请求耗时不会累积到下一个周期。
 - 点击左眼切换 DeepSeek 时立即刷新官方余额；点击右眼切换 Codex 时立即调用本机 app-server 查询额度。
-- 系统托盘支持显示机器人、查看详情、同步全部、开机自启动和退出；重复启动时只保留一个 Widget 实例。
+- 系统托盘支持显示机器人、查看详情、同步全部和退出；不再设置开机自启动，重复启动时只保留一个 Widget 实例。
 - Codex 任一周期剩余不高于 20%/10%，或 DeepSeek 余额不高于 10/5 时，通过 Windows 托盘发送分级提醒。
 - 点击机器人腹部屏幕打开当前 Provider 的七日趋势面板：Codex 显示每日 Token 柱状图；DeepSeek 根据每 5 分钟余额快照的下降额汇总每日金额用量，充值造成的余额上升不会计为消费。
 - 趋势面板、机器人右键菜单和系统托盘均提供“测试 Windows 额度预警”和“预警设置”；阈值保存于当前用户本地配置。
 - 额度预警采用双通道：右下角应用预警卡片保证可见，同时尝试发送 Windows 托盘通知；系统关闭通知或启用专注助手时仍有应用内提示。
-- Widget 无法连接本地 Service 时会尝试自动启动它；开发目录和同目录发布包都支持。
+- 发布版只有一个 `AIUsageRobot.exe`。双击时显示机器人并以同一程序的隐藏服务模式承载本地 API；退出机器人时一并结束后台服务。
 
 ## 运行
 
-先启动服务，再启动 Widget：
+生成单文件 Windows 应用：
 
 ```powershell
-dotnet run --project src/AIUsageRobot.Service
-dotnet run --project src/AIUsageRobot.Widget
+.\publish.ps1
 ```
+
+完成后双击 `publish\win-x64\AIUsageRobot.exe` 即可启动，不会随 Windows 自动运行。
 
 首次运行时右键机器人，选择“设置 DeepSeek API Key…”。
 
