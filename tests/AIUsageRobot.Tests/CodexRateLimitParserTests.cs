@@ -6,7 +6,7 @@ namespace AIUsageRobot.Tests;
 public sealed class CodexRateLimitParserTests
 {
     [Fact]
-    public void Parse_PrefersCodexBucketAndLongestWindow()
+    public void ParseSnapshot_PrefersCodexBucketAndKeepsBothWindows()
     {
         using var document = JsonDocument.Parse("""
             {
@@ -25,25 +25,22 @@ public sealed class CodexRateLimitParserTests
             }
             """);
 
-        var parsed = CodexRateLimitParser.TryParse(document.RootElement, DateTimeOffset.UnixEpoch, out var quota);
+        var parsed = CodexRateLimitParser.TryParseSnapshot(document.RootElement, DateTimeOffset.UnixEpoch, out var quota);
 
         Assert.True(parsed);
         Assert.NotNull(quota);
-        Assert.Equal(44, quota.Value);
-        Assert.Equal("remaining", quota.MetricSemantics);
-        Assert.Equal("1_weeks", quota.Period);
-        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_800_000_100), quota.ResetAt);
         Assert.Equal("Codex · pro", quota.Model);
         Assert.Equal(CodexRateLimitParser.SourceVersion, quota.ParserVersion);
-
-        Assert.True(CodexRateLimitParser.TryParseSnapshot(document.RootElement, DateTimeOffset.UnixEpoch, out var snapshot));
-        Assert.Equal(2, snapshot!.Windows.Count);
-        Assert.Equal(80, snapshot.Windows.Single(window => window.Name == "primary").RemainingPercentage);
-        Assert.Equal(44, snapshot.Windows.Single(window => window.Name == "secondary").RemainingPercentage);
+        Assert.Equal(2, quota.Windows.Count);
+        Assert.Equal(80, quota.Windows.Single(window => window.Name == "primary").RemainingPercentage);
+        var secondary = quota.Windows.Single(window => window.Name == "secondary");
+        Assert.Equal(44, secondary.RemainingPercentage);
+        Assert.Equal("1_weeks", secondary.Period);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_800_000_100), secondary.ResetAt);
     }
 
     [Fact]
-    public void Parse_SupportsSnakeCaseLegacyPayload()
+    public void ParseSnapshot_SupportsSnakeCasePayload()
     {
         using var document = JsonDocument.Parse("""
             {
@@ -57,11 +54,12 @@ public sealed class CodexRateLimitParserTests
             }
             """);
 
-        var parsed = CodexRateLimitParser.TryParse(document.RootElement, DateTimeOffset.UnixEpoch, out var quota);
+        var parsed = CodexRateLimitParser.TryParseSnapshot(document.RootElement, DateTimeOffset.UnixEpoch, out var quota);
 
         Assert.True(parsed);
-        Assert.Equal(88, quota!.Value);
-        Assert.Equal("5_hours", quota.Period);
+        var primary = Assert.Single(quota!.Windows);
+        Assert.Equal(88, primary.RemainingPercentage);
+        Assert.Equal("5_hours", primary.Period);
     }
 
     [Fact]
@@ -69,6 +67,6 @@ public sealed class CodexRateLimitParserTests
     {
         using var document = JsonDocument.Parse("""{ "rateLimits": { "primary": null } }""");
 
-        Assert.False(CodexRateLimitParser.TryParse(document.RootElement, DateTimeOffset.UnixEpoch, out _));
+        Assert.False(CodexRateLimitParser.TryParseSnapshot(document.RootElement, DateTimeOffset.UnixEpoch, out _));
     }
 }

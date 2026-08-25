@@ -44,9 +44,9 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 ## Codex 要求
 
 - 本机需要存在已经登录同一 ChatGPT Plus / Pro 账号的 Codex CLI。
-- 可在 `appsettings.json` 的 `Codex:ExecutablePath` 指定独立 CLI 路径。
+- 如需指定独立 CLI，可设置当前用户环境变量 `CODEX_EXECUTABLE`。
 - Microsoft Store 版 Codex 的内置 CLI 会在首次启动时复制到 `%LOCALAPPDATA%\AIUsageRobot\codex-runtime` 后运行，以绕过 WindowsApps 对外部进程的启动限制。
-- 浏览器扩展已退出主同步链路，不再要求打开 ChatGPT 网页。
+- 无需安装浏览器扩展，也不要求打开 ChatGPT 网页。
 
 ## 验证
 

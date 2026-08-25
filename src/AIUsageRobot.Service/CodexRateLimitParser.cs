@@ -26,25 +26,6 @@ public static class CodexRateLimitParser
         return true;
     }
 
-    public static bool TryParse(JsonElement payload, DateTimeOffset collectedAt, out ChatGptQuotaInput? quota)
-    {
-        quota = null;
-        if (!TryParseSnapshot(payload, collectedAt, out var snapshot) || snapshot is null) return false;
-        var selected = snapshot.Windows.MaxBy(item => ParsePeriodMinutes(item.Period))!;
-
-        quota = new ChatGptQuotaInput(
-            "chatgpt",
-            snapshot.Model,
-            selected.RemainingPercentage,
-            "remaining",
-            selected.Period,
-            selected.ResetAt,
-            collectedAt,
-            SourceVersion,
-            null);
-        return true;
-    }
-
     private static void AddParsedWindow(JsonElement snapshot, string propertyName, string displayName, List<CodexQuotaWindowInput> windows)
     {
         if (!snapshot.TryGetProperty(propertyName, out var window) || window.ValueKind != JsonValueKind.Object) return;
@@ -57,21 +38,6 @@ public static class CodexRateLimitParser
             : (DateTimeOffset?)null;
         var remaining = Math.Clamp(100 - (int)Math.Round(usedPercent, MidpointRounding.AwayFromZero), 0, 100);
         windows.Add(new CodexQuotaWindowInput(displayName, remaining, FormatPeriod(duration), resetAt));
-    }
-
-    private static long ParsePeriodMinutes(string? period)
-    {
-        if (string.IsNullOrWhiteSpace(period)) return 0;
-        var parts = period.Split('_', 2);
-        if (parts.Length != 2 || !long.TryParse(parts[0], out var value)) return 0;
-        return parts[1] switch
-        {
-            "minutes" => value,
-            "hours" => value * 60,
-            "days" => value * 1_440,
-            "weeks" => value * 10_080,
-            _ => 0
-        };
     }
 
     private static bool TrySelectSnapshot(JsonElement payload, out JsonElement snapshot)
@@ -104,16 +70,6 @@ public static class CodexRateLimitParser
 
         snapshot = default;
         return false;
-    }
-
-    private static void AddWindow(JsonElement snapshot, string name, List<(JsonElement Window, long Duration)> windows)
-    {
-        if (!snapshot.TryGetProperty(name, out var window) || window.ValueKind != JsonValueKind.Object) return;
-        if (!TryReadNumber(window, "usedPercent", "used_percent", out _)) return;
-        var duration = TryReadNumber(window, "windowDurationMins", "window_duration_mins", out var value)
-            ? Math.Max(0, (long)value)
-            : 0;
-        windows.Add((window, duration));
     }
 
     private static string FormatPeriod(long minutes)

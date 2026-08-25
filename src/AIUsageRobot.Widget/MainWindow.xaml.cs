@@ -46,7 +46,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         try { _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", LocalAppStorage.GetOrCreateApiToken()); }
         catch { }
-        _refreshTimer.Tick += async (_, _) => await RefreshAsync(false);
+        _refreshTimer.Tick += async (_, _) => await RefreshAsync();
         BuildContextMenu();
         _trayIcon = BuildTrayIcon();
     }
@@ -61,7 +61,7 @@ public partial class MainWindow : Window
         if (startWithCodex)
             await SyncSelectedProviderAsync(chatGpt: true);
         else
-            await RefreshAsync(false);
+            await RefreshAsync();
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--trend", StringComparison.OrdinalIgnoreCase)))
             OpenTrendWindow();
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--test-alert", StringComparison.OrdinalIgnoreCase)))
@@ -108,7 +108,7 @@ public partial class MainWindow : Window
             var endpoint = chatGpt ? "api/codex/refresh" : "api/deepseek/refresh";
             using var response = await _http.PostAsync(endpoint, null);
             response.EnsureSuccessStatusCode();
-            await RefreshAsync(false);
+            await RefreshAsync();
         }
         catch
         {
@@ -118,7 +118,7 @@ public partial class MainWindow : Window
                 var endpoint = chatGpt ? "api/codex/refresh" : "api/deepseek/refresh";
                 using var retry = await _http.PostAsync(endpoint, null);
                 retry.EnsureSuccessStatusCode();
-                await RefreshAsync(false);
+                await RefreshAsync();
             }
             catch { UpdatedText.Text = "SYNC FAIL"; }
         }
@@ -149,13 +149,12 @@ public partial class MainWindow : Window
         transform.BeginAnimation(RotateTransform.AngleProperty, animation, HandoffBehavior.SnapshotAndReplace);
     }
 
-    private async Task RefreshAsync(bool refreshDeepSeek)
+    private async Task RefreshAsync()
     {
         if (_refreshing) return;
         _refreshing = true;
         try
         {
-            if (refreshDeepSeek) await _http.PostAsync("api/deepseek/refresh", null);
             var overview = await _http.GetFromJsonAsync<OverviewDto>("api/overview", new JsonSerializerOptions(JsonSerializerDefaults.Web));
             if (overview is not null) Render(overview);
         }
@@ -273,7 +272,7 @@ public partial class MainWindow : Window
             await Task.WhenAll(
                 _http.PostAsync("api/deepseek/refresh", null),
                 _http.PostAsync("api/codex/refresh", null));
-            await RefreshAsync(false);
+            await RefreshAsync();
         }
         catch { UpdatedText.Text = "SYNC FAIL"; }
     }
@@ -452,7 +451,7 @@ public partial class MainWindow : Window
         {
             using var response = await _http.PutAsJsonAsync("api/deepseek/credential", new SaveCredentialRequest(box.Password));
             response.EnsureSuccessStatusCode();
-            await RefreshAsync(false);
+            await RefreshAsync();
         }
         catch (Exception ex) { MessageBox.Show(this, $"保存或连接测试失败：{ex.Message}", "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }

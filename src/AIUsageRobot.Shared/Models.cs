@@ -61,17 +61,6 @@ public sealed record OverviewDto(
 
 public sealed record SaveCredentialRequest(string ApiKey);
 
-public sealed record ChatGptQuotaInput(
-    string Provider,
-    string? Model,
-    int Value,
-    string MetricSemantics,
-    string? Period,
-    DateTimeOffset? ResetAt,
-    DateTimeOffset CollectedAt,
-    string ParserVersion,
-    string? RawText);
-
 public sealed record CodexQuotaWindowInput(
     string Name,
     int RemainingPercentage,
@@ -113,10 +102,6 @@ public sealed record DeepSeekUsageTrendDto(
     IReadOnlyList<DeepSeekDailyAmountDto> Days,
     DateTimeOffset? HistoryStartedAt,
     string CalculationMethod);
-
-public sealed record CreatePairingCodeResponse(string Code, DateTimeOffset ExpiresAt);
-public sealed record PairExtensionRequest(string Code);
-public sealed record PairExtensionResponse(string Token);
 
 public static class LocalAppStorage
 {
