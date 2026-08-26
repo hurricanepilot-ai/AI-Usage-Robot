@@ -4,15 +4,71 @@
 
 ## 当前状态
 
-- 当前执行者：AI-B（由 AgentTeams 编排，用户 2026-08-26 指派）
-- 任务状态：已完成（待合并到 `main`）
+- 当前执行者：**AI-B 已退出**，由用户切换给下一位 AI（handoff）
+- 任务状态：**Blocked（用户主动切走）**
 - 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness + dsh 路径解析修复（GUI 进程 PATH 不含 npm bin）+ 修轮询 MessageBox 阻塞 UI + 修 TcpClient 漏 UnobservedTaskException
-- 工作分支：`codex/ai-b-harness-poll-and-tcp-fix`
+- 工作分支：`codex/ai-b-harness-poll-and-tcp-fix`（**已合并到 main `bf0c0e0`，已推 `origin/main`**）
 - 基线提交：`7eae714`（上一次合并后的 `main` HEAD）
 - 最后更新：2026-08-26
 - 提交授权：已授予
 - 合并授权：已授予（最终合并到 `main`）
 - 推送授权：已授予
+
+### 接力时的具体阻塞（**这是下一位 AI 接手的第一件事**）
+
+代码改动全部已合并并推送。但 `publish/win-x64/AIUsageRobot.exe` 还是**旧版**（包含 iter 3 + iter 4，**不包含 iter 5 修复**），因为 widget 还在运行锁住了旧 exe，重打包 dotnet publish 报 `IOException: The process cannot access the file ... because it is being used by another process`。
+
+接手 AI 需要：
+
+1. 让用户关掉机器人（如果之前的"dsh web 启动后立即退出"MessageBox 还挂着，按 Enter / 点 OK 即可消掉）。如果窗口完全卡死无响应，让用户跑 `taskkill //F //IM AIUsageRobot.exe` 强杀（注意强杀会绕过 `Window_Closing` 里的 `StopOwnedHarness`，可能留孤儿 dsh 进程，需手动清）。
+2. 确认 `Get-Process AIUsageRobot` 返回空。
+3. 跑：
+   ```powershell
+   cd 'D:\tool\AI Usage Robot'
+   dotnet publish 'src/AIUsageRobot.Widget/AIUsageRobot.Widget.csproj' --configuration Release --runtime win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false --output 'publish/win-x64'
+   ```
+4. 确认新 exe 已生成（应该 ≈ 80.4 MB，包含 iter 5 修复）。
+5. 把状态从 "Blocked" 改回 "已完成"，更新 `AI_HANDOFF.md` 的"最后更新"时间戳。
+
+## 给下一位 AI 的接力说明
+
+**代码状态**：iter 5 已合并 `bf0c0e0`，`origin/main` 已同步，git 工作区干净。
+
+**未完成事项（唯一一件）**：用户机器上的 widget 还在跑，锁住 `publish/win-x64/AIUsageRobot.exe`，所以 dotnet publish 重打包失败。代码本身已经修好并提交，**只差重打单文件 exe**。
+
+**接手 AI 的 checklist**：
+
+1. **读 `AI_HANDOFF.md`** 当前状态 + 第 5 轮交接记录，弄清楚 iter 5 修了什么。
+2. **确认 widget 状态**：
+   ```powershell
+   Get-Process AIUsageRobot -ErrorAction SilentlyContinue
+   ```
+3. **如果 widget 还在跑**：让用户关窗口（按 Enter 消掉 MessageBox → 正常关窗）。窗口完全卡死的话，让用户跑 `taskkill //F //IM AIUsageRobot.exe`（注意强杀会绕过 Window_Closing，需手动 `taskkill //F //IM node.exe` 清残留 dsh）。
+4. **跑 build / test 确认代码没问题**（已经验证过 0 警告 0 错误、test 12/12 通过，但接手时再过一遍是规则）。
+5. **重新打包**：
+   ```powershell
+   cd 'D:\tool\AI Usage Robot'
+   dotnet publish 'src/AIUsageRobot.Widget/AIUsageRobot.Widget.csproj' --configuration Release --runtime win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false --output 'publish/win-x64'
+   ```
+6. **确认新 exe 落地**（`publish/win-x64/AIUsageRobot.exe`，≈80.4 MB）。
+7. **更新 `AI_HANDOFF.md`**：把"当前状态"从 Blocked 改回"已完成（全部交付）"；最后更新戳改成接手完成时间。
+8. **不再开新迭代**：用户明确说要切走，所以不要主动加新功能 / 改动代码。如果用户提出新需求，开新分支、新迭代。
+
+**已知风险**（沿用 AI_HANDOFF 规则 + 历史）：
+
+- iter 5 修的是"Exited 事件和轮询两套机制重复检测"，本轮通过 null-check 让它们协作。更彻底的做法是去掉轮询里的 `IsHarnessProcessAlive`、只依赖 Exited 事件，留作以后。
+- iter 4 的 `ResolveDshExecutable` 候选列表是硬编码，未来 dsh 改了安装位置要补条目。
+- iter 3 的慢闪与 `ShowProvider` 互动：如果慢闪进行中用户单击左眼切到 Codex，`ShowProvider` 会覆盖 `DeepSeekEyeFill.Fill` 为 `InactiveEyeBrush`，慢闪会被卡住。需要的话给 `ShowProvider` 加"如果正在慢闪则不要覆盖 `DeepSeekEyeFill`"的判断。
+- AgentTeams validator 静默失败事件记录在案（不影响代码）。
+- `widget-crash.log` 旧的 995 UnobservedTaskException 条目是 iter 5 修复前的累积，可以无视；如果用户嫌日志大，删了即可。
+
+**用户沟通模板**：
+
+> 上一位 AI 已把所有改动合到 main（`bf0c0e0`）并推到 `origin/main`，现在只剩重新打包 `publish/win-x64/AIUsageRobot.exe` 这件事。
+>
+> 请先把机器人关掉（X 或右键任务栏关闭窗口都行）。如果窗口挂着"dsh web 启动后立即退出"MessageBox，按一下 Enter 就能消。关掉之后告诉我，我立刻 `dotnet publish` 重新打包。
+>
+> 如果窗口完全卡死（连 X / Alt+F4 都没反应），告诉我；需要你在 PowerShell 跑 `Get-Process AIUsageRobot | Stop-Process -Force` 强杀。
 
 ## 协作规则
 
