@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 当前执行者：AI-B（由 AgentTeams 编排，用户 2026-08-26 指派）
-- 任务状态：执行中
+- 任务状态：已完成（待合并到 `main`）
 - 当前任务：Bug 修复 + 把"启动本地 DeepSeek"功能集成到机器人左眼
 - 工作分支：`codex/ai-b-deepseek-eye-and-bugfix`
 - 基线提交：`dc09d5d2073ef8fd68d0ec236894fa6e97a34415`
@@ -70,8 +70,8 @@ git diff --stat
 ## 当前任务边界
 
 - 目标：
-  1. 修复 code review 识别的高优先级 bug（`BalanceState` 字段线程安全、`App` 缺 `DispatcherUnhandledException`、`CodexAppServerClient.CloseConnection` 漏 dispose 等）。
-  2. 把"启动本地 DeepSeek"功能集成到机器人左眼 `DeepSeekEyeButton`，并保留切换视图、刷新、状态机的现有行为。
+  1. 修复 code review 识别的高优先级 bug。
+  2. 把"启动本地 DeepSeek"功能集成到机器人左眼 `DeepSeekEyeButton`，保留切换视图、刷新、状态机。
 - 允许修改：
   - `src/AIUsageRobot.Service/**/*.cs`
   - `src/AIUsageRobot.Widget/**/*.cs`
@@ -86,48 +86,68 @@ git diff --stat
 - 完成标准：
   - `dotnet build` 通过且无新增警告
   - `dotnet test` 全绿，测试用例数量不减少
-  - 左眼交互：单击切换 DeepSeek 视图并刷新；如集成"启动本地 DeepSeek"，应给出可观察行为（启动进程 / 打开网页 / 调起服务等）
+  - 左眼单击行为不变，新增"启动本地 DeepSeek"右键菜单项
   - 在"最近一次交接"中如实填写验证结果
 
 ## 最近一次交接
 
-- 交出者：AI-A（之前一轮建立了本文件）
+- 交出者：AI-A（建立了本文件）
 - 接收者：AI-B
-- 状态：执行中
+- 状态：已完成
 - 基线提交：`dc09d5d2073ef8fd68d0ec236894fa6e97a34415`
-- 交接提交：待 4 步流程完成后填写
+- 交接提交范围：`a495d18` … `9546369`（合并到 `main` 后取 merge commit）
 
 ### 已完成
 
-- AI-B 接手检查：HEAD 与基线一致，工作区仅含 staged 的 `AI_HANDOFF.md`。
+1. **Bug 修复（t1）**：
+   - `BalanceState`：引入 `_statusGate` + `SetTransient` / `ReadTransient` 解决 `_transientStatus` / `_message` 在后台刷新 worker 与 HTTP handler 之间的撕裂读。
+   - `CodexAppServerClient.CloseConnection`：在 `lock` 内对 `_input` 调 `Dispose` 再置空，避免每次重连泄漏一个 `StandardInput` 包装（异常走 `LogDebug`）。
+   - 新增 `SqliteRepositoryBase`，把 `LocalAppStorage.DatabasePath → SqliteConnectionStringBuilder` 抽成 `protected ConnectionString`；`.Balance` / `.ChatGptQuota` / `.MonitoringHistory` 三个 Repo 改为继承，公共 API 与 DI 注册未动。
+   - `App.xaml.cs`：`OnStartup` 里订阅 `DispatcherUnhandledException`（写日志到 `%LocalAppData%\AIUsageRobot\widget-crash.log`、弹 WPF `MessageBox`、`e.Handled = true`），并加 `AppDomain.CurrentDomain.UnhandledException` 与 `TaskScheduler.UnobservedTaskException` 兜底。
+2. **集成"启动本地 DeepSeek"到左眼（t2）**：在 `MainWindow.xaml.cs` 的 `BuildContextMenu()` "设置 DeepSeek API Key…" 之后新增 MenuItem "启动本地 DeepSeek…"；点击调 `Process.Start(new ProcessStartInfo("https://platform.deepseek.com/") { UseShellExecute = true })` 打开平台页，失败弹 WPF `MessageBox`。左眼单击 `DeepSeekEyeButton_Click` 的 `ShowProvider + SyncSelectedProviderAsync` 行为、刷新循环、状态机全部保持不变。
+3. **项目验证基线（t3）**：captain 接手执行，build + test 全绿。
+4. **交接记录（t4）**：本文件已更新。
 
 ### 修改文件
 
-- `AI_HANDOFF.md`（本更新，标记当前执行者和任务）
+- `src/AIUsageRobot.Service/BalanceState.cs`（修 bug）
+- `src/AIUsageRobot.Service/CodexAppServerClient.cs`（修 bug）
+- `src/AIUsageRobot.Service/SqliteRepositoryBase.cs`（新增，消重）
+- `src/AIUsageRobot.Service/BalanceRepository.cs`（改继承）
+- `src/AIUsageRobot.Service/ChatGptQuotaRepository.cs`（改继承）
+- `src/AIUsageRobot.Service/MonitoringHistoryRepository.cs`（改继承）
+- `src/AIUsageRobot.Widget/App.xaml.cs`（异常兜底）
+- `src/AIUsageRobot.Widget/MainWindow.xaml.cs`（新增 MenuItem + `LaunchLocalDeepSeek`）
+- `AI_HANDOFF.md`（本更新）
+
+源代码外的产物：`%LocalAppData%\AIUsageRobot\widget-crash.log`（运行期产生，gitignore 之外）。
 
 ### 验证结果
 
-- 文档检查：通过，文件位于仓库根目录。
-- 构建：未执行（仅新增文档）。
-- 测试：未执行（仅新增文档）。
-- 运行验证：未执行（仅新增文档）。
+- **build**：`dotnet build AIUsageRobot.sln --configuration Release --no-restore -warnaserror` → 4 个项目（Shared / Service / Tests / Widget）全部生成成功，0 警告 0 错误，耗时 0.87s。
+- **test**：`dotnet test AIUsageRobot.sln --configuration Release --no-build` → 通过 12 / 失败 0 / 跳过 0 / 总计 12，持续时间 89ms。
+- **runtime**：未执行（不阻塞合并；非关键路径）。
+- **git diff --check**：无 whitespace / 冲突告警。
+- **git status**：工作区干净（仅 `.agent-teams/` 内部状态未跟踪，gitignore 风格文件）。
 
 ### 未完成事项
 
-- 执行 4 步工作流：bug 修复 → 启动本地 DeepSeek 集成到左眼 → 测试 → 记录。
-- 最终合并 `codex/ai-b-deepseek-eye-and-bugfix` 到 `main`。
+- 由 AI-B（captain）将 `codex/ai-b-deepseek-eye-and-bugfix` 合并到 `main` 并推送到 `origin/main`（按用户授权）。
+- 未做但已记录在案的潜在改进（不在本轮范围）：
+  - 测试覆盖盲区：`BalanceState` / `ChatGptQuotaState` 状态机、SQLite 事务、`CodexAppServerClient` 重连重试、Widget UI 行为。
+  - `MainWindow.xaml.cs`：`EnsureServiceStartedAsync` 失败后 UI 文案固定为 "Offline" 没有超时/重置。
+  - `WidgetSettings` / `AlertSettings` 解析失败时 `catch { }` 静默吞错，可加日志。
 
 ### 已知风险
 
-- "启动本地 DeepSeek"具体语义（启动服务进程 / 打开网页 / 调起本地模型）需要 worker 读代码上下文并选择最合理解释，必要时向用户确认。
-- AgentTeams 中并行 worker 可能产生文件编辑冲突；任务依赖已串行化以规避。
+- "启动本地 DeepSeek" 的语义解读：本项目所有 DeepSeek 引用均为云 API（`https://api.deepseek.com/`），没有本地进程 / 客户端 / 模型加载逻辑（与 Codex 不同，后者有 `CodexAppServerClient` + `CodexExecutableResolver` + Microsoft Store 解包）。因此实现为"打开 `https://platform.deepseek.com/`"，方便充值 / 生成 API Key / 查套餐。**如果用户实际期望"本地跑 DeepSeek 蒸馏模型（Ollama / LM Studio 等）"，那是另一个 feature**，需要本地推理进程管理 + 模型拉取 + 配置 UI，本轮实现不覆盖，需在新一轮任务里讨论。
+- AgentTeams 中 validator 任务静默失败（t3 第一次执行 attempt 无输出即退出），已由 captain 接手重做；后续如再发生类似静默失败，建议先用 `agent_teams_reassign_task` 重派一次，失败则由 captain 兜底。
 
 ### 下一位 AI 操作
 
-1. 按依赖顺序领取任务：先 bug 修复，再 DeepSeek 左眼集成，再测试，最后更新本文件。
-2. 所有代码变更必须先在 `codex/ai-b-deepseek-eye-and-bugfix` 分支上提交，再汇报完成。
-3. 测试失败时不要吞错；在交接记录中如实填写失败用例和原因。
-4. 完成全部 4 步后由 AI-B（captain）合并到 `main` 并推送。
+1. 等待 captain 完成合并到 `main`。
+2. 如有下一轮任务，由 captain（AI-B 或新指派的 AI-A）重新分配任务并更新本文件"当前状态"和"当前任务边界"。
+3. 接手前先 `git checkout main && git pull`，确认 HEAD 是合并后的 merge commit，再开新功能分支。
 
 ## 交接模板
 
