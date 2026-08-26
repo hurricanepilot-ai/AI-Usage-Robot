@@ -6,9 +6,9 @@
 
 - 当前执行者：AI-B（由 AgentTeams 编排，用户 2026-08-26 指派）
 - 任务状态：已完成（待合并到 `main`）
-- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness
-- 工作分支：`codex/ai-b-harness-exit-notify`
-- 基线提交：`b20c8c5`（上一次合并后的 `main` HEAD）
+- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness + dsh 路径解析修复（GUI 进程 PATH 不含 npm bin）
+- 工作分支：`codex/ai-b-harness-path-resolve`
+- 基线提交：`9e43784`（上一次合并后的 `main` HEAD）
 - 最后更新：2026-08-26
 - 提交授权：已授予
 - 合并授权：已授予（最终合并到 `main`）
@@ -96,7 +96,54 @@ git diff --stat
 
 ## 交接历史
 
-### 第 3 轮（当前）：Harness 退出通知 + 同步 kill
+### 第 4 轮（当前）：dsh 路径解析修复
+
+- 交出者：AI-B
+- 接收者：（待合并后由下一位 AI / 用户接管）
+- 状态：已完成（待合并）
+- 基线提交：`9e43784`
+- 交接提交：`fcad514`
+- 分支：`codex/ai-b-harness-path-resolve`
+
+#### 已完成
+
+1. **`ResolveDshExecutable`**：在常见 npm/yarn 全局 bin 位置硬编码搜索 `dsh.cmd` / `dsh.exe` / `dsh`，找到就返回绝对路径；找不到再走当前 process 的 PATH；都找不到返回 `null`。
+   - 命中顺序：`%APPDATA%\npm\dsh.cmd`（这是本机实际位置）→ `%LOCALAPPDATA%\npm\dsh.cmd` → `%APPDATA%\npm\dsh` → Yarn、PnP、自定义 prefix → 当前 process PATH 遍历。
+2. **`EnsureChildHasFullPath`**：合并 `EnvironmentVariableTarget.Machine` + `User` + 当前 process 的 PATH，写入 `ProcessStartInfo.Environment["PATH"]`，去重。覆盖 dsh.cmd 内部 shellaot `node` 时的依赖查找。
+3. **`LaunchHarnessAsync` 改用解析后的路径**：`FileName = harnessExe ?? "dsh"`；resolved 失败时弹明确错误提示（指引 `npm install -g` + 常见位置）。原来"PATH 中找不到 dsh"的提示已替换。
+4. **try/catch 文案更新**：失败时显示具体的 `harnessExe` 路径 + 异常消息，不再笼统说 PATH。
+
+#### 修改文件
+
+- `src/AIUsageRobot.Widget/MainWindow.xaml.cs`（+113 行 / -9 行：新增 `ResolveDshExecutable`、`EnsureChildHasFullPath`；改造 `LaunchHarnessAsync`）
+- `AI_HANDOFF.md`（本更新）
+
+#### 验证结果
+
+- **build**：`dotnet build AIUsageRobot.sln --configuration Release --no-restore -warnaserror` → 4 项目全过，0 警告 0 错误，耗时 7.54s。
+- **test**：`dotnet test AIUsageRobot.sln --configuration Release --no-build` → 通过 12 / 失败 0 / 跳过 0 / 总计 12，持续时间 186ms。
+- **runtime**：未在本环境无头跑过 widget，但用 `where.exe dsh` 验证了 shim 在 `%APPDATA%\npm\dsh.cmd`，命中 `ResolveDshExecutable` 的第一个候选位置。
+- **git diff --check**：无 whitespace / 冲突告警。
+- **git status**：除 `AI_HANDOFF.md` 待提交外干净。
+
+#### 未完成事项
+
+- 由 captain 合并到 `main` + 推 `origin/main` + 重打单文件包。
+- 用户手动验证：双击 exe → 双击左眼 → Harness 启动 + 浏览器打开 3080。
+
+#### 已知风险
+
+- **`ResolveDshExecutable` 候选列表是硬编码**：未来 dsh 改了安装位置或用户用了非标准 prefix 还要再补条目。可考虑后续接 `WidgetSettings` 让用户自定义路径。
+- **没写单元测试覆盖 `ResolveDshExecutable`**：逻辑很纯，但当前 Widget 工程没有测试项目。后续如果新增 WPF 测试框架（如 xUnit + WpfUiTest）可以补。
+- 第 3 轮的慢闪与 ShowProvider 互动风险继续在案。
+
+#### 下一位 AI 操作
+
+1. 等待 captain 完成合并 + 重打包。
+2. 用户手动验证。
+3. 接手前 `git checkout main && git pull`。
+
+### 第 3 轮（已合并）：Harness 退出通知 + 同步 kill
 
 - 交出者：AI-B
 - 接收者：（待合并后由下一位 AI / 用户接管）
