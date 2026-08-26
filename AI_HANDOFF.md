@@ -6,9 +6,9 @@
 
 - 当前执行者：AI-B（由 AgentTeams 编排，用户 2026-08-26 指派）
 - 任务状态：已完成（待合并到 `main`）
-- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness + dsh 路径解析修复（GUI 进程 PATH 不含 npm bin）
-- 工作分支：`codex/ai-b-harness-path-resolve`
-- 基线提交：`9e43784`（上一次合并后的 `main` HEAD）
+- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness + dsh 路径解析修复（GUI 进程 PATH 不含 npm bin）+ 修轮询 MessageBox 阻塞 UI + 修 TcpClient 漏 UnobservedTaskException
+- 工作分支：`codex/ai-b-harness-poll-and-tcp-fix`
+- 基线提交：`7eae714`（上一次合并后的 `main` HEAD）
 - 最后更新：2026-08-26
 - 提交授权：已授予
 - 合并授权：已授予（最终合并到 `main`）
@@ -96,7 +96,70 @@ git diff --stat
 
 ## 交接历史
 
-### 第 4 轮（当前）：dsh 路径解析修复
+### 第 5 轮（当前）：修"杀 dsh 后机器人卡住" + 漏 UnobservedTaskException
+
+- 交出者：AI-B
+- 接收者：（待合并后由下一位 AI / 用户接管）
+- 状态：已完成（待合并）
+- 基线提交：`7eae714`
+- 交接提交：`caeec9e`
+- 分支：`codex/ai-b-harness-poll-and-tcp-fix`
+
+#### 问题复盘
+
+用户反馈：双击左眼启动 dsh 后用 `taskkill //F //IM node.exe` 杀掉 dsh 的 node.exe，机器人"也死机了"。
+
+#### 根因
+
+第 3 轮实现里有 **两套机制** 同时检测 Harness 死亡，互相打架：
+1. `Process.Exited` 事件 → 触发慢闪（正确路径）
+2. `LaunchHarnessAsync` 轮询循环里的 `IsHarnessProcessAlive()` 检查 → 触发 `MessageBox.Show("dsh web 启动后立即退出...")`
+
+当用户在 6 秒轮询窗口内杀掉 dsh，两个机制都触发。`Process.Exited` 把 `_harnessProcess` 置 null、启动慢闪；接着轮询循环看到 `_harnessProcess is null`、进 `MessageBox.Show` 分支。**这个 MessageBox 是模态的，挂在主窗口上**，如果不主动关掉，看起来就是机器人"死机"。
+
+崩溃日志里另一类 `SocketException(995)` UnobservedTaskException 是 `IsHarnessReachableAsync` 的 TcpClient 在超时后没正确取消底层 socket，被 dispose 时漏出孤儿 ConnectAsync。日志被刷屏但不影响功能，只是污染。
+
+#### 已完成
+
+1. **轮询循环静默退出**：检测到 `_harnessProcess is null`（说明 Exited 已经处理了）就 `return`，不再弹"立即退出" MessageBox。
+2. **TcpClient 取消**：`Task.WhenAny` 超时分支里 `client.Close()` 显式中断正在进行的 ConnectAsync，然后 `await connectTask` 把异常观察掉（catch 掉，因为预期内的）。这样 `widget-crash.log` 不再被 995 错误刷屏。
+
+#### 修改文件
+
+- `src/AIUsageRobot.Widget/MainWindow.xaml.cs`（+23 行 / -3 行：`IsHarnessReachableAsync` 加 Close + await；`LaunchHarnessAsync` 轮询循环顶部加 null-check）
+- `AI_HANDOFF.md`（本更新）
+
+#### 验证结果
+
+- **build**：`dotnet build AIUsageRobot.sln --configuration Release --no-restore -warnaserror` → 4 项目全过，0 警告 0 错误，耗时 10.55s。
+- **test**：`dotnet test AIUsageRobot.sln --configuration Release --no-build` → 通过 12 / 失败 0 / 跳过 0 / 总计 12，持续时间 180ms。
+- **runtime**：未在无头环境跑过 widget；用户手动验证。
+- **git diff --check**：无 whitespace / 冲突告警。
+- **git status**：除 `AI_HANDOFF.md` 待提交外干净。
+
+#### 未完成事项
+
+- 由 captain 合并到 `main` + 推 `origin/main` + 重打单文件包。
+- 用户手动验证三个场景：
+  1. 双击左眼 → 浏览器打开 3080。
+  2. `taskkill //F //IM node.exe` → 左眼开始 2s 周期慢闪，**不再有 MessageBox 卡 UI**。
+  3. 关机器人 → dsh 进程同步消失（iter 3 功能保持）。
+  4. 顺手看 `%LocalAppData%\AIUsageRobot\widget-crash.log` 应该不再有 995 异常新增（旧的累积条目不影响）。
+
+#### 已知风险
+
+- 第 4 轮的 ResolveDshExecutable 硬编码候选列表继续在案。
+- 第 3 轮的慢闪与 ShowProvider 互动继续在案。
+- **Exited 事件和轮询重复检测本质上是 redundant 设计**：本轮通过 null-check 让它们协作，但理论上更干净的做法是完全去掉轮询里的 IsHarnessProcessAlive，只保留 Exited 事件。本轮没动，留作以后可能。
+- AgentTeams validator 静默失败继续在案。
+
+#### 下一位 AI 操作
+
+1. 等待 captain 完成合并 + 重打包。
+2. 用户手动验证 4 个场景。
+3. 接手前 `git checkout main && git pull`。
+
+### 第 4 轮（已合并）：dsh 路径解析修复
 
 - 交出者：AI-B
 - 接收者：（待合并后由下一位 AI / 用户接管）
