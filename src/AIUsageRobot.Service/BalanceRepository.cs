@@ -5,10 +5,8 @@ namespace AIUsageRobot.Service;
 
 public sealed record StoredBalance(decimal Total, string Currency, bool IsAvailable, DateTimeOffset UpdatedAt);
 
-public sealed class BalanceRepository
+public sealed class BalanceRepository : SqliteRepositoryBase
 {
-    private string ConnectionString => new SqliteConnectionStringBuilder { DataSource = LocalAppStorage.DatabasePath }.ToString();
-
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(LocalAppStorage.RootDirectory);

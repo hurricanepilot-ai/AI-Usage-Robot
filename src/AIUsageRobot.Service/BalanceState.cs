@@ -10,6 +10,7 @@ public sealed class BalanceState(
     ILogger<BalanceState> logger)
 {
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly object _statusGate = new();
     private DataStatus? _transientStatus;
     private string? _message;
 
@@ -21,8 +22,7 @@ public sealed class BalanceState(
             var apiKey = await credentials.GetAsync(cancellationToken);
             if (apiKey is null)
             {
-                _transientStatus = DataStatus.Unknown;
-                _message = "未配置 DeepSeek API Key";
+                SetTransient(DataStatus.Unknown, "未配置 DeepSeek API Key");
                 return;
             }
 
@@ -32,18 +32,15 @@ public sealed class BalanceState(
                 await repository.SaveAsync(balance, cancellationToken);
                 await history.SaveAsync(new ProviderSnapshotDto(
                     "deepseek", "balance", balance.Total, balance.Currency, balance.UpdatedAt), cancellationToken);
-                _transientStatus = null;
-                _message = null;
+                SetTransient(null, null);
             }
             catch (DeepSeekAuthenticationException)
             {
-                _transientStatus = DataStatus.AuthError;
-                _message = "API Key 无效或已失效";
+                SetTransient(DataStatus.AuthError, "API Key 无效或已失效");
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
-                _transientStatus = DataStatus.Offline;
-                _message = "DeepSeek 暂时不可达";
+                SetTransient(DataStatus.Offline, "DeepSeek 暂时不可达");
                 logger.LogWarning("DeepSeek balance refresh failed: {ErrorType}", ex.GetType().Name);
             }
         }
@@ -54,28 +51,45 @@ public sealed class BalanceState(
     {
         var stored = await repository.GetAsync(cancellationToken);
         var hasCredential = await credentials.GetAsync(cancellationToken) is not null;
+        var (transientStatus, message) = ReadTransient();
         if (stored is null)
         {
-            var emptyStatus = _transientStatus ?? DataStatus.Unknown;
+            var emptyStatus = transientStatus ?? DataStatus.Unknown;
             return new DeepSeekBalanceDto(
-                new Metric<decimal?>(null, emptyStatus, null, _message ?? "Unknown"), "CNY", null, hasCredential);
+                new Metric<decimal?>(null, emptyStatus, null, message ?? "Unknown"), "CNY", null, hasCredential);
         }
 
         var age = DateTimeOffset.UtcNow - stored.UpdatedAt;
         var freshness = age < TimeSpan.FromMinutes(15) ? DataStatus.Fresh
             : age <= TimeSpan.FromHours(24) ? DataStatus.Stale
             : DataStatus.Unavailable;
-        var status = _transientStatus is DataStatus.AuthError or DataStatus.Offline ? _transientStatus.Value : freshness;
+        var status = transientStatus is DataStatus.AuthError or DataStatus.Offline ? transientStatus.Value : freshness;
         return new DeepSeekBalanceDto(
-            new Metric<decimal?>(stored.Total, status, stored.UpdatedAt, _message),
+            new Metric<decimal?>(stored.Total, status, stored.UpdatedAt, message),
             stored.Currency, stored.IsAvailable, hasCredential);
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken)
     {
         await repository.ClearAsync(cancellationToken);
-        _transientStatus = DataStatus.Unknown;
-        _message = "未配置 DeepSeek API Key";
+        SetTransient(DataStatus.Unknown, "未配置 DeepSeek API Key");
+    }
+
+    private void SetTransient(DataStatus? status, string? message)
+    {
+        lock (_statusGate)
+        {
+            _transientStatus = status;
+            _message = message;
+        }
+    }
+
+    private (DataStatus? Status, string? Message) ReadTransient()
+    {
+        lock (_statusGate)
+        {
+            return (_transientStatus, _message);
+        }
     }
 }
 
