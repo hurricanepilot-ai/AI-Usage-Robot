@@ -429,13 +429,30 @@ public partial class MainWindow : Window
         alertSettings.Click += (_, _) => ShowAlertSettings();
         var credential = new MenuItem { Header = "设置 DeepSeek API Key…" };
         credential.Click += async (_, _) => await ShowCredentialDialogAsync();
+        var launchDeepSeek = new MenuItem { Header = "启动本地 DeepSeek…" };
+        launchDeepSeek.Click += (_, _) => LaunchLocalDeepSeek();
         var topmost = new MenuItem { Header = "始终置顶", IsCheckable = true, IsChecked = true };
         topmost.Click += (_, _) => Topmost = topmost.IsChecked;
         var exit = new MenuItem { Header = "退出" };
         exit.Click += (_, _) => Close();
-        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(testAlert); menu.Items.Add(alertSettings); menu.Items.Add(credential);
+        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(testAlert); menu.Items.Add(alertSettings); menu.Items.Add(credential); menu.Items.Add(launchDeepSeek);
         menu.Items.Add(new Separator()); menu.Items.Add(topmost); menu.Items.Add(new Separator()); menu.Items.Add(exit);
         ContextMenu = menu;
+    }
+
+    private void LaunchLocalDeepSeek()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://platform.deepseek.com/")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, $"无法打开 DeepSeek 平台页：{exception.Message}", "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private async Task ShowCredentialDialogAsync()
