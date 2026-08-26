@@ -54,7 +54,7 @@ public partial class MainWindow : Window
     private static bool _harnessStopInProgress;
 
     // Slow-blink animation when our tracked Harness dies unexpectedly.
-    private Storyboard? _harnessBlinkStoryboard;
+    private bool _harnessExitBlinkActive;
     private SolidColorBrush? _harnessBlinkBrush;
 
     public MainWindow()
@@ -161,7 +161,10 @@ public partial class MainWindow : Window
         ChatGptPage.Visibility = chatGpt ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekPage.Visibility = chatGpt ? Visibility.Collapsed : Visibility.Visible;
         PageTitle.Text = chatGpt ? CodexPageTitle(_lastOverview?.ChatGPT) : "DEEPSEEK";
-        DeepSeekEyeFill.Fill = chatGpt ? InactiveEyeBrush : DeepSeekActiveBrush;
+        if (!_harnessExitBlinkActive)
+        {
+            DeepSeekEyeFill.Fill = chatGpt ? InactiveEyeBrush : DeepSeekActiveBrush;
+        }
         GptEyeFill.Fill = chatGpt ? GptActiveBrush : InactiveEyeBrush;
         AnimateArm(LeftArmRotation, chatGpt ? 0 : 180);
         AnimateArm(RightArmRotation, chatGpt ? -180 : 0);
@@ -581,31 +584,20 @@ public partial class MainWindow : Window
 
     private static async Task<bool> IsHarnessReachableAsync()
     {
-        var client = new TcpClient();
+        using var client = new TcpClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         try
         {
-            var connectTask = client.ConnectAsync(HarnessHost, HarnessPort);
-            var timeoutTask = Task.Delay(500);
-            var winner = await Task.WhenAny(connectTask, timeoutTask);
-            if (winner != connectTask)
-            {
-                // Timed out. Closing the socket aborts the in-flight connect, and
-                // awaiting the now-failed connectTask observes its SocketException(995)
-                // so it doesn't surface as an UnobservedTaskException later. Without
-                // this, every timeout leaks one entry into widget-crash.log.
-                client.Close();
-                try { await connectTask; } catch { /* expected: aborted by Close */ }
-                return false;
-            }
+            await client.ConnectAsync(HarnessHost, HarnessPort, timeout.Token);
             return client.Connected;
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            return false;
         }
         catch
         {
             return false;
-        }
-        finally
-        {
-            client.Dispose();
         }
     }
 
@@ -721,12 +713,23 @@ public partial class MainWindow : Window
         }
     }
 
-    // Fired on a ThreadPool thread by Process.Exited. Marshal to UI thread before touching
-    // any WPF state. ReferenceEquals filter drops stale events from previously launched
-    // processes (e.g., after the user re-double-clicks while an old Exited is in flight).
+    // Fired on a ThreadPool thread by Process.Exited. Queue the UI cleanup asynchronously:
+    // synchronously invoking the Dispatcher while the Process exit callback is still running
+    // can deadlock when OnHarnessExited disposes that same Process instance.
     private void HarnessProcess_Exited(object? sender, EventArgs e)
     {
-        Dispatcher.Invoke(() => OnHarnessExited(sender));
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+
+        try
+        {
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Normal,
+                new Action(() => OnHarnessExited(sender)));
+        }
+        catch (InvalidOperationException)
+        {
+            // The app is already shutting down; there is no UI state left to update.
+        }
     }
 
     private void OnHarnessExited(object? sender)
@@ -750,8 +753,9 @@ public partial class MainWindow : Window
     // SolidColorBrush so we don't fight ShowProvider's static brush references.
     private void StartHarnessExitBlink()
     {
-        if (_harnessBlinkStoryboard != null) return;
+        if (_harnessExitBlinkActive) return;
 
+        _harnessExitBlinkActive = true;
         _harnessBlinkBrush = new SolidColorBrush(Color.FromRgb(47, 174, 255)); // DeepSeek blue
         DeepSeekEyeFill.Fill = _harnessBlinkBrush;
 
@@ -765,18 +769,18 @@ public partial class MainWindow : Window
             EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
         };
 
-        _harnessBlinkStoryboard = new Storyboard();
-        Storyboard.SetTarget(animation, _harnessBlinkBrush);
-        Storyboard.SetTargetProperty(animation, new PropertyPath(SolidColorBrush.ColorProperty));
-        _harnessBlinkStoryboard.Children.Add(animation);
-        _harnessBlinkStoryboard.Begin();
+        _harnessBlinkBrush.BeginAnimation(
+            SolidColorBrush.ColorProperty,
+            animation,
+            HandoffBehavior.SnapshotAndReplace);
     }
 
     private void StopHarnessExitBlink()
     {
-        if (_harnessBlinkStoryboard is null) return;
-        _harnessBlinkStoryboard.Stop();
-        _harnessBlinkStoryboard = null;
+        if (!_harnessExitBlinkActive) return;
+
+        _harnessExitBlinkActive = false;
+        _harnessBlinkBrush?.BeginAnimation(SolidColorBrush.ColorProperty, null);
         _harnessBlinkBrush = null;
         // Re-apply the eye color that matches the currently shown provider.
         ShowProvider(_showingChatGpt);

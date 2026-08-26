@@ -4,17 +4,19 @@
 
 ## 当前状态
 
-- 当前执行者：**AI-B 已退出**，由用户切换给下一位 AI（handoff）
-- 任务状态：**Blocked（用户主动切走）**
-- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness + dsh 路径解析修复（GUI 进程 PATH 不含 npm bin）+ 修轮询 MessageBox 阻塞 UI + 修 TcpClient 漏 UnobservedTaskException
-- 工作分支：`codex/ai-b-harness-poll-and-tcp-fix`（**已合并到 main `bf0c0e0`，已推 `origin/main`**）
-- 基线提交：`7eae714`（上一次合并后的 `main` HEAD）
+- 当前执行者：AI-A
+- 任务状态：已完成，实机验证通过
+- 当前任务：部署遗漏修复 + Harness 退出死锁修复 + 端口探测生命周期修复 + 慢闪恢复
+- 工作分支：`codex/ai-a-harness-lifecycle-fix`
+- 基线提交：`2d195de`
 - 最后更新：2026-08-26
 - 提交授权：已授予
-- 合并授权：已授予（最终合并到 `main`）
-- 推送授权：已授予
+- 合并授权：未授予
+- 推送授权：已授予（当前功能分支）
 
-### 接力时的具体阻塞（**这是下一位 AI 接手的第一件事**）
+### 已解除的接力阻塞
+
+2026-08-26 13:25 已结束锁定旧发布包的进程，重新生成单文件 EXE 并重启。以下内容保留为历史问题说明。
 
 代码改动全部已合并并推送。但 `publish/win-x64/AIUsageRobot.exe` 还是**旧版**（包含 iter 3 + iter 4，**不包含 iter 5 修复**），因为 widget 还在运行锁住了旧 exe，重打包 dotnet publish 报 `IOException: The process cannot access the file ... because it is being used by another process`。
 
@@ -30,7 +32,7 @@
 4. 确认新 exe 已生成（应该 ≈ 80.4 MB，包含 iter 5 修复）。
 5. 把状态从 "Blocked" 改回 "已完成"，更新 `AI_HANDOFF.md` 的"最后更新"时间戳。
 
-## 给下一位 AI 的接力说明
+## 上一轮接力说明（已处理）
 
 **代码状态**：iter 5 已合并 `bf0c0e0`，`origin/main` 已同步，git 工作区干净。
 
@@ -58,7 +60,7 @@
 
 - iter 5 修的是"Exited 事件和轮询两套机制重复检测"，本轮通过 null-check 让它们协作。更彻底的做法是去掉轮询里的 `IsHarnessProcessAlive`、只依赖 Exited 事件，留作以后。
 - iter 4 的 `ResolveDshExecutable` 候选列表是硬编码，未来 dsh 改了安装位置要补条目。
-- iter 3 的慢闪与 `ShowProvider` 互动：如果慢闪进行中用户单击左眼切到 Codex，`ShowProvider` 会覆盖 `DeepSeekEyeFill.Fill` 为 `InactiveEyeBrush`，慢闪会被卡住。需要的话给 `ShowProvider` 加"如果正在慢闪则不要覆盖 `DeepSeekEyeFill`"的判断。
+- iter 3 的慢闪与 `ShowProvider` 互动问题已在第 6 轮修复并通过实机验证。
 - AgentTeams validator 静默失败事件记录在案（不影响代码）。
 - `widget-crash.log` 旧的 995 UnobservedTaskException 条目是 iter 5 修复前的累积，可以无视；如果用户嫌日志大，删了即可。
 
@@ -127,32 +129,59 @@ git diff --stat
 ## 当前任务边界
 
 - 目标：
-  1. 修正上一轮 t2 的位置错位：把"启动 DeepSeek Harness"功能**真正集成到机器人左眼** `DeepSeekEyeButton`，而不是放在右键菜单里。
-  2. 撤回上一轮"打开 `https://platform.deepseek.com/`"的实现。
-  3. 单击左眼行为保持原样（切换 DeepSeek 视图 + 刷新余额）；**双击**左眼启动 DeepSeek Harness。
-  4. Harness 以后台方式启动（`UseShellExecute=false`, `CreateNoWindow=true`, `WindowStyle=Hidden`），检测 `127.0.0.1:3080` 端口避免重复启动。
+  1. 确保当前源码进入单文件发布包并重新启动。
+  2. 使用可取消的 `TcpClient.ConnectAsync`，避免超时或退出时遗留未观察任务。
+  3. Harness 异常退出后，即使切换 Provider，左眼慢闪仍保持。
 - 允许修改：
-  - `src/AIUsageRobot.Widget/**/*.cs`
-  - `src/AIUsageRobot.Widget/**/*.xaml`
-  - `.gitignore`（补充 `.agent-teams/`）
+  - `src/AIUsageRobot.Widget/MainWindow.xaml.cs`
   - `AI_HANDOFF.md`
 - 禁止修改：
-  - `README.md`（除非用户明确授权）
+  - `README.md`
   - `publish/`（gitignore 之外）
   - `src/AIUsageRobot.Service/**`（本轮不动 service）
   - `.git/` 内部状态
-- 依赖：dotnet 8 SDK；用户机器 `PATH` 中有 `dsh` 命令
+- 依赖：.NET 8 SDK；用户机器已安装 `dsh 0.1.1-rc.2`
 - 完成标准：
   - `dotnet build` 通过且无新增警告
   - `dotnet test` 全绿（12/12）
-  - 双击左眼能后台启动 `dsh web` 并在系统默认浏览器打开 `http://127.0.0.1:3080/`
-  - 单击左眼仍是切换 DeepSeek 视图 + 刷新
-  - 已经运行的 Harness 实例（无论是用户命令行启的还是上次第双击启的）双击时只打开浏览器，不重复拉进程
-  - Harness 启动失败 / 端口未就绪 / `dsh` 不在 PATH 时弹 WPF MessageBox 给出明确错误
+  - `dotnet test` 全绿（12/12）
+  - 新发布包启动后 `/health=200`、未授权 `/api/overview=401`
+  - 用户手动验证双击左眼启动、异常退出慢闪和 Provider 切换
 
 ## 交接历史
 
-### 第 5 轮（当前）：修"杀 dsh 后机器人卡住" + 漏 UnobservedTaskException
+### 第 6 轮（当前）：接管、重新发布并修复 Harness 生命周期
+
+- 交出者：AI-A
+- 接收者：用户 / 下一位 AI
+- 状态：已完成，代码、发布和实机 UI 验证全部通过
+- 基线提交：`2d195de`
+- 交接提交：见包含本记录的分支 HEAD
+- 分支：`codex/ai-a-harness-lifecycle-fix`
+
+#### 已完成
+
+1. 确认旧发布包生成于第 5 轮源码提交之前，结束精确识别的旧机器人、服务和其 Harness 子进程，重新发布并重启。
+2. 将 Harness 端口探测改为带 500ms 取消令牌的 `ConnectAsync`，不再通过关闭 Socket 后追赶后台连接任务处理超时。
+3. `ShowProvider` 在慢闪运行时不再覆盖 `DeepSeekEyeFill.Fill`。
+4. 将 `Process.Exited` 回调从同步 `Dispatcher.Invoke` 改为异步 `Dispatcher.BeginInvoke`，消除退出事件线程与 UI 线程清理同一个 `Process` 时的死锁。
+5. 慢闪不再使用无宿主的 `Storyboard.Begin()`；改为直接在专用 `SolidColorBrush.ColorProperty` 上启动 `ColorAnimation`。
+
+#### 验证结果
+
+- build：通过，0 警告、0 错误。
+- test：通过 12/12。
+- publish：通过，生成单一 `publish/win-x64/AIUsageRobot.exe`。
+- runtime：发布版启动后 `/health=200`；未授权 `/api/overview=401`；`widget-crash.log` 无新增记录。
+- UI 实机：双击左眼成功打开 Harness；结束 Harness 后机器人不卡死且左眼慢闪；慢闪期间切换 Codex 正常且慢闪保持；再次双击可恢复 Harness并停止慢闪。
+- 防重复：Harness 运行时再次双击，包装进程和 Node 进程仍各 1 个，创建时间不变。
+- 退出联动：用户通过右键菜单退出后，机器人、服务和 Harness 进程均为 0，17860/3080 监听端口均为 0。
+
+#### 未完成事项
+
+- 未合并到 `main`，等待用户另行授权。
+
+### 第 5 轮：修"杀 dsh 后机器人卡住" + 漏 UnobservedTaskException
 
 - 交出者：AI-B
 - 接收者：（待合并后由下一位 AI / 用户接管）
