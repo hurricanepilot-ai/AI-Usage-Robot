@@ -497,21 +497,39 @@ public partial class MainWindow : Window
                 return;
             }
 
+            // Resolve dsh's full path so we don't depend on PATH lookup. GUI processes
+            // launched from Explorer often inherit a stripped PATH that omits npm's global
+            // bin directory, even though `dsh web` works fine from cmd. See ResolveDshExecutable.
+            var harnessExe = ResolveDshExecutable();
+            if (harnessExe is null)
+            {
+                MessageBox.Show(this,
+                    "未找到 dsh 命令。\n\n请确认 dsh 已通过 `npm install -g @deepseek-ai/dsh` 安装，或将 dsh.cmd 所在目录加入系统 PATH。\n\n常见位置：%APPDATA%\\npm\\dsh.cmd",
+                    "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = harnessExe,
+                Arguments = "web",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            // Belt-and-suspenders: dsh.cmd internally shells out to `node`, which lives in
+            // Machine PATH (Program Files\nodejs). Merging Machine + User + Process PATH
+            // guarantees the shim can find it regardless of what Explorer handed us.
+            EnsureChildHasFullPath(psi);
+
             try
             {
-                _harnessProcess = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "dsh",
-                    Arguments = "web",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                });
+                _harnessProcess = Process.Start(psi);
             }
             catch (Exception startException)
             {
                 MessageBox.Show(this,
-                    $"无法启动 dsh web（PATH 中找不到 dsh）：{startException.Message}\n\n请确认 `dsh` 命令已在当前用户的 PATH 中。",
+                    $"无法启动 {harnessExe}：{startException.Message}",
                     "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -594,6 +612,92 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 $"无法打开浏览器：{exception.Message}\n\n请手动访问 {url}",
                 "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // Resolves the full path of the `dsh` shim so we don't rely on PATH lookup.
+    //
+    // Why this matters: when the widget is launched from Explorer (double-click the .exe),
+    // the resulting GUI process inherits a stripped-down PATH that doesn't include the
+    // user's npm global bin directory. `dsh web` works fine from cmd because cmd reads
+    // PATH from the registry, but Process.Start with FileName="dsh" fails with
+    // "系统找不到指定的文件".
+    //
+    // Strategy: try hard-coded standard npm/yarn global bin locations first, then walk
+    // the current process's PATH, then return null and let the caller decide.
+    private static string? ResolveDshExecutable()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        var standardLocations = new[]
+        {
+            Path.Combine(appData, "npm", "dsh.cmd"),
+            Path.Combine(appData, "npm", "dsh.exe"),
+            Path.Combine(appData, "npm", "dsh"),
+            Path.Combine(localAppData, "npm", "dsh.cmd"),
+            Path.Combine(localAppData, "npm", "dsh.exe"),
+            Path.Combine(localAppData, "Yarn", "bin", "dsh.cmd"),
+            Path.Combine(localAppData, "Yarn", "bin", "dsh"),
+            Path.Combine(userProfile, ".npm-global", "bin", "dsh.cmd"),
+            Path.Combine(userProfile, ".local", "bin", "dsh.cmd"),
+            Path.Combine(userProfile, ".yarn", "bin", "dsh.cmd"),
+        };
+        foreach (var candidate in standardLocations)
+        {
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        var pathEnv = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process);
+        if (!string.IsNullOrEmpty(pathEnv))
+        {
+            foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                foreach (var name in new[] { "dsh.cmd", "dsh.exe", "dsh.bat", "dsh" })
+                {
+                    try
+                    {
+                        var full = Path.Combine(dir, name);
+                        if (File.Exists(full)) return full;
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // GUI processes spawned from Explorer inherit a PATH that usually omits the user-level
+    // entries (npm bin, etc.) that cmd.exe picks up from the registry. Even after we resolve
+    // a full path to dsh.cmd, the shim itself shells out to `node`, which lives in the system
+    // PATH entry installed by the Node.js installer (\Program Files\nodejs). Merge Machine +
+    // User + current process PATH into the child environment so the resolved executable and
+    // anything it spawns can find their dependencies.
+    private static void EnsureChildHasFullPath(ProcessStartInfo psi)
+    {
+        var machinePath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine);
+        var userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+        psi.Environment.TryGetValue("PATH", out var existing);
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ordered = new List<string>();
+        void add(string? p)
+        {
+            if (string.IsNullOrEmpty(p)) return;
+            foreach (var part in p.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (seen.Add(part)) ordered.Add(part);
+            }
+        }
+        add(machinePath);
+        add(userPath);
+        add(existing);
+
+        if (ordered.Count > 0)
+        {
+            psi.Environment["PATH"] = string.Join(Path.PathSeparator.ToString(), ordered);
         }
     }
 
