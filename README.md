@@ -1,6 +1,40 @@
-# AI Usage Robot
+# AI Usage Robot — DSH Edition
 
 AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Plus / Pro 账号的 Codex 配额与 DeepSeek API 余额。
+
+> 当前分支是 **DSH Edition**，额外集成 DeepSeek Harness。无需 DSH 的用户应使用 [`main`](https://github.com/hurricanepilot-ai/AI-Usage-Robot/tree/main) 标准版。本项目通过分支区分两个版本，目前没有运行时版本切换开关。
+
+## 版本选择
+
+| 版本 | Git 分支 | 发布文件 | 适用场景 |
+| --- | --- | --- | --- |
+| 标准版 | `main` | `AIUsageRobot.exe` | 只监控 Codex 配额与 DeepSeek API 余额，不安装或启动 DSH |
+| DSH Edition | `codex/dsh-edition` | `AIUsageRobot-DSH.exe` | 需要从机器人左眼启动和监控 DeepSeek Harness |
+
+克隆仓库后，可按需要切换版本：
+
+```powershell
+# 标准版
+git switch main
+
+# DSH Edition
+git switch --track origin/codex/dsh-edition
+```
+
+## DSH Edition 功能
+
+- 单击左眼：保持原有行为，切换到 DeepSeek 余额视图并刷新。
+- 双击左眼：后台启动 `dsh web`，等待 `127.0.0.1:3080` 就绪后打开浏览器。
+- 已有 Harness 运行时：只打开浏览器，不重复启动进程。
+- Harness 异常退出时：左眼缓慢闪烁；重新启动 Harness 后停止闪烁。
+- 退出机器人时：同步结束由机器人启动的 Harness，不影响用户自行启动的实例。
+
+DSH Edition 需要本机安装 Node.js 和 DSH：
+
+```powershell
+npm install -g @deepseek-ai/dsh
+dsh --version
+```
 
 ## 已实现
 
@@ -27,7 +61,7 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 - 点击机器人腹部屏幕打开当前 Provider 的七日趋势面板：Codex 显示每日 Token 柱状图；DeepSeek 根据每 5 分钟余额快照的下降额汇总每日金额用量，充值造成的余额上升不会计为消费。
 - 趋势面板、机器人右键菜单和系统托盘均提供“测试 Windows 额度预警”和“预警设置”；阈值保存于当前用户本地配置。
 - 额度预警采用双通道：右下角应用预警卡片保证可见，同时尝试发送 Windows 托盘通知；系统关闭通知或启用专注助手时仍有应用内提示。
-- 发布版只有一个 `AIUsageRobot.exe`。双击时显示机器人并以同一程序的隐藏服务模式承载本地 API；退出机器人时一并结束后台服务。
+- DSH Edition 发布版只有一个 `AIUsageRobot-DSH.exe`。双击时显示机器人并以同一程序的隐藏服务模式承载本地 API；退出机器人时一并结束后台服务和由机器人启动的 Harness。
 
 ## 运行
 
@@ -37,7 +71,7 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 .\publish.ps1
 ```
 
-完成后双击 `publish\win-x64\AIUsageRobot.exe` 即可启动，不会随 Windows 自动运行。
+完成后双击 `publish\win-x64\AIUsageRobot-DSH.exe` 即可启动，不会随 Windows 自动运行。
 
 首次运行时右键机器人，选择“设置 DeepSeek API Key…”。
 

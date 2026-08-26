@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$publishedExeName = "AIUsageRobot-DSH.exe"
 $publishRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "publish"))
 $publishOutput = [System.IO.Path]::GetFullPath((Join-Path $publishRoot $Runtime))
 if (!$publishOutput.StartsWith($publishRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -24,9 +25,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish 失败，退出代码 $LASTEXITCODE"
 }
 
+$defaultExe = Join-Path $publishOutput "AIUsageRobot.exe"
+$editionExe = Join-Path $publishOutput $publishedExeName
+if (!(Test-Path -LiteralPath $defaultExe -PathType Leaf)) {
+    throw "未找到默认发布文件 $defaultExe"
+}
+Move-Item -LiteralPath $defaultExe -Destination $editionExe
+
 $publishedFiles = @(Get-ChildItem -LiteralPath $publishOutput -File)
-if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne "AIUsageRobot.exe") {
-    throw "发布结果不是单一 AIUsageRobot.exe，请检查 $publishOutput"
+if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne $publishedExeName) {
+    throw "发布结果不是单一 $publishedExeName，请检查 $publishOutput"
 }
 
 Write-Host "已生成: $($publishedFiles[0].FullName)"

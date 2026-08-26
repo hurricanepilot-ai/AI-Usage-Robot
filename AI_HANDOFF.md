@@ -6,13 +6,13 @@
 
 - 当前执行者：AI-A
 - 任务状态：已完成，实机验证通过
-- 当前任务：部署遗漏修复 + Harness 退出死锁修复 + 端口探测生命周期修复 + 慢闪恢复
-- 工作分支：`codex/ai-a-harness-lifecycle-fix`
-- 基线提交：`2d195de`
+- 当前任务：建立长期 DSH Edition 分支、明确版本选择并生成专用发布文件
+- 工作分支：`codex/dsh-edition`
+- 基线提交：`79cd063`
 - 最后更新：2026-08-26
 - 提交授权：已授予
 - 合并授权：未授予
-- 推送授权：已授予（当前功能分支）
+- 推送授权：已授予（DSH Edition 分支）
 
 ### 已解除的接力阻塞
 
@@ -129,28 +129,56 @@ git diff --stat
 ## 当前任务边界
 
 - 目标：
-  1. 确保当前源码进入单文件发布包并重新启动。
-  2. 使用可取消的 `TcpClient.ConnectAsync`，避免超时或退出时遗留未观察任务。
-  3. Harness 异常退出后，即使切换 Provider，左眼慢闪仍保持。
+  1. 保留 `main` 作为不依赖 DSH 的标准版。
+  2. 建立长期 `codex/dsh-edition` 分支并向开发者说明版本选择。
+  3. DSH Edition 发布为单文件 `AIUsageRobot-DSH.exe`。
 - 允许修改：
-  - `src/AIUsageRobot.Widget/MainWindow.xaml.cs`
+  - `README.md`
+  - `publish.ps1`
   - `AI_HANDOFF.md`
 - 禁止修改：
-  - `README.md`
   - `publish/`（gitignore 之外）
+  - Harness 运行逻辑（已在第 6 轮完成验证）
   - `src/AIUsageRobot.Service/**`（本轮不动 service）
   - `.git/` 内部状态
 - 依赖：.NET 8 SDK；用户机器已安装 `dsh 0.1.1-rc.2`
 - 完成标准：
   - `dotnet build` 通过且无新增警告
   - `dotnet test` 全绿（12/12）
-  - `dotnet test` 全绿（12/12）
-  - 新发布包启动后 `/health=200`、未授权 `/api/overview=401`
-  - 用户手动验证双击左眼启动、异常退出慢闪和 Provider 切换
+  - 发布目录只有 `AIUsageRobot-DSH.exe`
+  - 重命名后的 EXE 能启动同名服务子进程
+  - `/health=200`、未授权 `/api/overview=401`
 
 ## 交接历史
 
-### 第 6 轮（当前）：接管、重新发布并修复 Harness 生命周期
+### 第 7 轮（当前）：建立 DSH Edition 长期版本
+
+- 交出者：AI-A
+- 接收者：用户 / DSH Edition 后续开发者
+- 状态：已完成并验证，提交与推送见分支 HEAD
+- 基线提交：`79cd063`
+- 交接提交：见包含本记录的分支 HEAD
+- 分支：`codex/dsh-edition`
+
+#### 已完成
+
+1. 从已完成实机验证的 Harness 修复提交建立长期分支 `codex/dsh-edition`，不合并 `main`。
+2. README 增加标准版与 DSH Edition 对照、分支选择、DSH 依赖、左眼操作和构建说明。
+3. `publish.ps1` 在 DSH Edition 分支将单文件产物命名为 `AIUsageRobot-DSH.exe`，并严格验证发布目录只有该文件。
+
+#### 验证结果
+
+- build：通过，0 警告、0 错误。
+- test：通过 12/12。
+- publish：通过，目录内仅有 `AIUsageRobot-DSH.exe`。
+- runtime：重命名后的 EXE 正常启动 Widget，并以同一文件名启动 `--service` 子进程。
+- API：`/health=200`；未授权 `/api/overview=401`。
+
+#### 未完成事项
+
+- `main` 保持标准版，不合并本分支。
+
+### 第 6 轮：接管、重新发布并修复 Harness 生命周期
 
 - 交出者：AI-A
 - 接收者：用户 / 下一位 AI
