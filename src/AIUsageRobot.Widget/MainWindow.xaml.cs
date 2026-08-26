@@ -49,6 +49,14 @@ public partial class MainWindow : Window
     private static readonly SemaphoreSlim HarnessLaunchGate = new(1, 1);
     private static Process? _harnessProcess;
 
+    // Set to true while we are deliberately stopping Harness (Window_Closing / explicit kill),
+    // so the Exited handler can tell apart "we asked it to stop" vs "it died on its own".
+    private static bool _harnessStopInProgress;
+
+    // Slow-blink animation when our tracked Harness dies unexpectedly.
+    private Storyboard? _harnessBlinkStoryboard;
+    private SolidColorBrush? _harnessBlinkBrush;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -82,6 +90,9 @@ public partial class MainWindow : Window
         SavePosition();
         _http.Dispose();
         StopOwnedService();
+        // Kill any Harness we launched before tearing down the window so it doesn't linger
+        // after the user closes the robot.
+        StopOwnedHarness();
         var trayIcon = _trayIcon.Icon;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
@@ -475,6 +486,11 @@ public partial class MainWindow : Window
         }
         try
         {
+            // If we were previously blinking because our tracked Harness died, stop the blink
+            // before we attempt to launch or re-open. Stale "dead Harness" state should not
+            // bleed into the new attempt.
+            StopHarnessExitBlink();
+
             if (await IsHarnessReachableAsync())
             {
                 OpenInBrowser(HarnessUrl);
@@ -497,6 +513,18 @@ public partial class MainWindow : Window
                 MessageBox.Show(this,
                     $"无法启动 dsh web（PATH 中找不到 dsh）：{startException.Message}\n\n请确认 `dsh` 命令已在当前用户的 PATH 中。",
                     "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Subscribe AFTER Start so we can observe Exited events. EnableRaisingEvents must
+            // be true for the event to fire. We also check HasExited to avoid losing the event
+            // if the process died in the gap between Start and subscribe.
+            if (_harnessProcess is null) return;
+            _harnessProcess.EnableRaisingEvents = true;
+            _harnessProcess.Exited += HarnessProcess_Exited;
+            if (_harnessProcess.HasExited)
+            {
+                HarnessProcess_Exited(_harnessProcess, EventArgs.Empty);
                 return;
             }
 
@@ -567,6 +595,88 @@ public partial class MainWindow : Window
                 $"无法打开浏览器：{exception.Message}\n\n请手动访问 {url}",
                 "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    // Fired on a ThreadPool thread by Process.Exited. Marshal to UI thread before touching
+    // any WPF state. ReferenceEquals filter drops stale events from previously launched
+    // processes (e.g., after the user re-double-clicks while an old Exited is in flight).
+    private void HarnessProcess_Exited(object? sender, EventArgs e)
+    {
+        Dispatcher.Invoke(() => OnHarnessExited(sender));
+    }
+
+    private void OnHarnessExited(object? sender)
+    {
+        if (!ReferenceEquals(sender, _harnessProcess)) return;
+
+        var wasStopInProgress = _harnessStopInProgress;
+        _harnessStopInProgress = false;
+
+        try { _harnessProcess?.Dispose(); } catch { }
+        _harnessProcess = null;
+
+        if (!wasStopInProgress)
+        {
+            StartHarnessExitBlink();
+        }
+    }
+
+    // Slow blink on the left eye at ~2s period to signal that the Harness we launched
+    // has exited in the background. Implemented as a smooth ColorAnimation on a dedicated
+    // SolidColorBrush so we don't fight ShowProvider's static brush references.
+    private void StartHarnessExitBlink()
+    {
+        if (_harnessBlinkStoryboard != null) return;
+
+        _harnessBlinkBrush = new SolidColorBrush(Color.FromRgb(47, 174, 255)); // DeepSeek blue
+        DeepSeekEyeFill.Fill = _harnessBlinkBrush;
+
+        var animation = new ColorAnimation
+        {
+            From = Color.FromRgb(47, 174, 255),
+            To = Color.FromRgb(15, 20, 25),
+            Duration = TimeSpan.FromSeconds(1),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        };
+
+        _harnessBlinkStoryboard = new Storyboard();
+        Storyboard.SetTarget(animation, _harnessBlinkBrush);
+        Storyboard.SetTargetProperty(animation, new PropertyPath(SolidColorBrush.ColorProperty));
+        _harnessBlinkStoryboard.Children.Add(animation);
+        _harnessBlinkStoryboard.Begin();
+    }
+
+    private void StopHarnessExitBlink()
+    {
+        if (_harnessBlinkStoryboard is null) return;
+        _harnessBlinkStoryboard.Stop();
+        _harnessBlinkStoryboard = null;
+        _harnessBlinkBrush = null;
+        // Re-apply the eye color that matches the currently shown provider.
+        ShowProvider(_showingChatGpt);
+    }
+
+    // Called from Window_Closing. Synchronously terminates the Harness instance we started,
+    // if it's still alive. We only kill what we tracked — a Harness the user launched
+    // manually from a command line is not our child and must not be touched.
+    private void StopOwnedHarness()
+    {
+        // Set the flag BEFORE killing so any Exited event that fires while/after Kill returns
+        // is recognized as "we asked for this" and won't trigger the slow-blink.
+        _harnessStopInProgress = true;
+        StopHarnessExitBlink();
+        try
+        {
+            if (_harnessProcess is { HasExited: false })
+            {
+                _harnessProcess.Kill(entireProcessTree: true);
+            }
+        }
+        catch { }
+        try { _harnessProcess?.Dispose(); } catch { }
+        _harnessProcess = null;
     }
 
     private async Task ShowCredentialDialogAsync()

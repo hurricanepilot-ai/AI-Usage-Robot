@@ -6,9 +6,9 @@
 
 - 当前执行者：AI-B（由 AgentTeams 编排，用户 2026-08-26 指派）
 - 任务状态：已完成（待合并到 `main`）
-- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击
-- 工作分支：`codex/ai-b-deepseek-harness-launcher`
-- 基线提交：`c2aaf18`（上一次合并后的 `main` HEAD）
+- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness
+- 工作分支：`codex/ai-b-harness-exit-notify`
+- 基线提交：`b20c8c5`（上一次合并后的 `main` HEAD）
 - 最后更新：2026-08-26
 - 提交授权：已授予
 - 合并授权：已授予（最终合并到 `main`）
@@ -96,7 +96,73 @@ git diff --stat
 
 ## 交接历史
 
-### 第 2 轮（当前）：修复左眼 Harness 启动器
+### 第 3 轮（当前）：Harness 退出通知 + 同步 kill
+
+- 交出者：AI-B
+- 接收者：（待合并后由下一位 AI / 用户接管）
+- 状态：已完成（待合并）
+- 基线提交：`b20c8c5`
+- 交接提交：`1851312`
+- 分支：`codex/ai-b-harness-exit-notify`
+
+#### 已完成
+
+1. **订阅 Harness `Exited` 事件**：
+   - `Process.Start` 成功后立刻 `_harnessProcess.EnableRaisingEvents = true` + 订阅 `_harnessProcess.Exited`。
+   - 启动后立即 `if (HasExited) HarnessProcess_Exited(...)`，避免 Start → Subscribe 间隙内进程死掉丢事件。
+2. **`OnHarnessExited` 在 UI 线程处理**：
+   - `HarnessProcess_Exited` 捕获 ThreadPool 上的事件，`Dispatcher.Invoke` 切回 UI 线程。
+   - `ReferenceEquals(sender, _harnessProcess)` 过滤老实例的过期事件（用户重新双击启了新 Harness 后老 Exited 还在 in-flight）。
+   - 看 `_harnessStopInProgress` 区分"我们主动 Kill"和"它自己死了"；前者直接清场，后者启动慢闪。
+3. **左眼慢闪**（`StartHarnessExitBlink`）：
+   - 创建专属 `SolidColorBrush`，把 `DeepSeekEyeFill.Fill` 换成它。
+   - `Storyboard` + `ColorAnimation`：从 DeepSeek 蓝 `(47,174,255)` 到接近黑 `(15,20,25)`，`Duration=1s`，`AutoReverse=true`，`RepeatBehavior=Forever`，`SineEase EaseInOut`。**完整周期 2s**，符合用户要求。
+   - 用独立 brush 不和 `ShowProvider` 的静态 brush 引用打架。
+4. **`StopHarnessExitBlink`**：停 storyboard、清 brush 引用、调 `ShowProvider(_showingChatGpt)` 把眼睛颜色还原到当前 provider 对应的状态。
+5. **`StopOwnedHarness`**：
+   - 先置 `_harnessStopInProgress = true`，保证即使 Kill 触发的 Exited 跑过来也不会触发慢闪。
+   - 停慢闪 → `Kill(entireProcessTree: true)` → `Dispose` → 置 null。
+   - 只杀我们自己跟踪的 `_harnessProcess`；用户自己在命令行启的 Harness 不在 `_harnessProcess` 里，不会误杀。
+6. **`Window_Closing` 加 `StopOwnedHarness()`**：在 `StopOwnedService()` 之后调，机器人关掉时把 Harness 也同步关掉。
+7. **`LaunchHarnessAsync` 入口加 `StopHarnessExitBlink()`**：再次双击时先停止上一轮的慢闪状态再走流程。
+
+#### 修改文件
+
+- `src/AIUsageRobot.Widget/MainWindow.xaml.cs`（+110 行：3 个字段 + 4 个新方法 + Window_Closing 一行 + LaunchHarnessAsync 三处小改）
+- `AI_HANDOFF.md`（本更新）
+
+#### 验证结果
+
+- **build**：`dotnet build AIUsageRobot.sln --configuration Release --no-restore -warnaserror` → 4 项目全过，0 警告 0 错误，耗时 4.77s。
+- **test**：`dotnet test AIUsageRobot.sln --configuration Release --no-build` → 通过 12 / 失败 0 / 跳过 0 / 总计 12，持续时间 103ms。
+- **runtime**：未执行（无法在本环境无头启动 WPF + 模拟进程退出）。
+- **git diff --check**：无 whitespace / 冲突告警。
+- **git status**：工作区干净（除 `AI_HANDOFF.md` 待提交）。
+
+#### 未完成事项
+
+- 由 AI-B（captain）合并到 `main` 并推 `origin/main`，重打单文件包。
+- 用户手动验证 3 个场景：
+  1. 双击左眼 → 浏览器打开 3080。
+  2. 在浏览器 / 命令行里把 dsh 进程 kill 掉 → 左眼开始 2s 周期慢闪。
+  3. 关机器人 → dsh 进程同步退出（用 `Get-Process dsh` 或任务管理器验证）。
+
+#### 已知风险
+
+- **慢闪只覆盖我们自己跟踪的 Harness**：用户自己在命令行启的 Harness 死了我们不会知道（因为端口可达分支不跟踪）。如果用户希望也监测这种"野生"实例，需做"周期性探端口，断流时再慢闪"——本轮不做。
+- **`_harnessStopInProgress` 是简单 `bool`**：UI 线程单写、Dispatcher 上单读，理论安全；不打算升级成更重的同步原语。
+- **慢闪和 Codex 视图切换的互动**：如果慢闪进行中用户单击左眼切到 Codex，`ShowProvider` 会覆盖 `DeepSeekEyeFill.Fill` 为 `InactiveEyeBrush`，但 Storyboard 仍在跑、还把颜色绑在 `_harnessBlinkBrush` 上——结果眼睛颜色卡死、不再慢闪。要修就把 `ShowProvider` 加个"如果正在慢闪则不要覆盖 `DeepSeekEyeFill`"的判断。本轮不做，权衡是：Harness 死的时候通常不会同时切视图。
+- 第 2 轮的 `dsh` 路径 / 端口 hardcode 风险继续在案。
+- AgentTeams validator 静默失败事件继续在案（不影响本轮）。
+
+#### 下一位 AI 操作
+
+1. 等待 captain 完成合并到 `main` + 重打 `publish/win-x64/AIUsageRobot.exe`。
+2. 用户手动跑 3 个验证场景。
+3. 如有下一轮任务，由 captain 重新分配并更新"当前状态"和"当前任务边界"。
+4. 接手前先 `git checkout main && git pull`，确认 HEAD 是新 merge commit。
+
+### 第 2 轮（已合并）：修复左眼 Harness 启动器
 
 - 交出者：AI-B
 - 接收者：（待合并后由下一位 AI / 用户接管）
