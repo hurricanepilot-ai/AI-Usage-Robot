@@ -2,6 +2,17 @@
 
 AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Plus / Pro 账号的 Codex 配额与 DeepSeek API 余额。
 
+> 当前 `main` 分支是**标准版**，不安装、不启动、也不要求本机存在 DSH。需要从机器人左眼启动 DeepSeek Harness 的用户，请使用 [`codex/dsh-edition`](https://github.com/hurricanepilot-ai/AI-Usage-Robot/tree/codex/dsh-edition)。
+
+## 版本选择
+
+| 版本 | Git 分支 | 发布文件 | 适用场景 |
+| --- | --- | --- | --- |
+| 标准版 | `main` | `AIUsageRobot.exe` | 监控 Codex 配额与 DeepSeek API 余额，不使用 DSH |
+| DSH Edition | `codex/dsh-edition` | `AIUsageRobot-DSH.exe` | 需要启动和监控 DeepSeek Harness |
+
+两个版本独立维护，DSH Edition 不合并回 `main`。
+
 ## 已实现
 
 - `AIUsageRobot.Service`：仅监听 `127.0.0.1:17860` 的独立 ASP.NET Core 进程。

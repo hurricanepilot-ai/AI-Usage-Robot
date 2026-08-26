@@ -135,9 +135,7 @@
             <Path Data="M 150,37 L 170,37 L 177,62 Q 174,75 160,77 Q 146,75 143,62 Z" Fill="{StaticResource GraphiteLight}" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
 
             <Button x:Name="DeepSeekEyeButton" Width="92" Height="66" Margin="48,21,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"
-                    Style="{StaticResource EyeButtonStyle}"
-                    PreviewMouseLeftButtonDown="DeepSeekEyeButton_PreviewMouseLeftButtonDown"
-                    MouseDoubleClick="DeepSeekEyeButton_MouseDoubleClick">
+                    Style="{StaticResource EyeButtonStyle}" Click="DeepSeekEyeButton_Click">
                 <Grid>
                     <Ellipse Fill="#303A3B" Stroke="{StaticResource Edge}" StrokeThickness="4"/>
                     <Ellipse x:Name="DeepSeekEyeFill" Width="50" Height="50" Fill="#080A0A" Stroke="#D8E2DF" StrokeThickness="4"/>

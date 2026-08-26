@@ -4,17 +4,17 @@
 
 ## 当前状态
 
-- 当前执行者：**AI-B 已退出**，由用户切换给下一位 AI（handoff）
-- 任务状态：**Blocked（用户主动切走）**
-- 当前任务：Bug 修复 + 把"启动 DeepSeek Harness"功能集成到机器人左眼双击 + Harness 退出慢闪 + 机器人退出同步 kill Harness + dsh 路径解析修复（GUI 进程 PATH 不含 npm bin）+ 修轮询 MessageBox 阻塞 UI + 修 TcpClient 漏 UnobservedTaskException
-- 工作分支：`codex/ai-b-harness-poll-and-tcp-fix`（**已合并到 main `bf0c0e0`，已推 `origin/main`**）
-- 基线提交：`7eae714`（上一次合并后的 `main` HEAD）
+- 当前执行者：AI-A
+- 任务状态：标准版清理完成，构建、发布和运行验证通过
+- 当前任务：从 `main` 移除 DSH/Harness 功能，保留通用 bug 修复，并明确双版本入口
+- 工作分支：`codex/standard-main-cleanup`
+- 基线提交：`2d195de`
 - 最后更新：2026-08-26
 - 提交授权：已授予
-- 合并授权：已授予（最终合并到 `main`）
-- 推送授权：已授予
+- 合并授权：已授予（仅标准版清理快进到 `main`）
+- 推送授权：已授予（`main`）
 
-### 接力时的具体阻塞（**这是下一位 AI 接手的第一件事**）
+### 历史接力阻塞（已处理）
 
 代码改动全部已合并并推送。但 `publish/win-x64/AIUsageRobot.exe` 还是**旧版**（包含 iter 3 + iter 4，**不包含 iter 5 修复**），因为 widget 还在运行锁住了旧 exe，重打包 dotnet publish 报 `IOException: The process cannot access the file ... because it is being used by another process`。
 
@@ -127,32 +127,58 @@ git diff --stat
 ## 当前任务边界
 
 - 目标：
-  1. 修正上一轮 t2 的位置错位：把"启动 DeepSeek Harness"功能**真正集成到机器人左眼** `DeepSeekEyeButton`，而不是放在右键菜单里。
-  2. 撤回上一轮"打开 `https://platform.deepseek.com/`"的实现。
-  3. 单击左眼行为保持原样（切换 DeepSeek 视图 + 刷新余额）；**双击**左眼启动 DeepSeek Harness。
-  4. Harness 以后台方式启动（`UseShellExecute=false`, `CreateNoWindow=true`, `WindowStyle=Hidden`），检测 `127.0.0.1:3080` 端口避免重复启动。
+  1. `main` 恢复为完全不依赖 DSH 的标准版。
+  2. 保留服务线程安全、连接释放、SQLite 基类和异常兜底等通用修复。
+  3. README 明确标准版与 DSH Edition 的分支和产物选择。
 - 允许修改：
   - `src/AIUsageRobot.Widget/**/*.cs`
   - `src/AIUsageRobot.Widget/**/*.xaml`
-  - `.gitignore`（补充 `.agent-teams/`）
+  - `README.md`
   - `AI_HANDOFF.md`
 - 禁止修改：
-  - `README.md`（除非用户明确授权）
   - `publish/`（gitignore 之外）
   - `src/AIUsageRobot.Service/**`（本轮不动 service）
   - `.git/` 内部状态
-- 依赖：dotnet 8 SDK；用户机器 `PATH` 中有 `dsh` 命令
+- 依赖：.NET 8 SDK；标准版不依赖 DSH 或 Node.js
 - 完成标准：
   - `dotnet build` 通过且无新增警告
   - `dotnet test` 全绿（12/12）
-  - 双击左眼能后台启动 `dsh web` 并在系统默认浏览器打开 `http://127.0.0.1:3080/`
-  - 单击左眼仍是切换 DeepSeek 视图 + 刷新
-  - 已经运行的 Harness 实例（无论是用户命令行启的还是上次第双击启的）双击时只打开浏览器，不重复拉进程
-  - Harness 启动失败 / 端口未就绪 / `dsh` 不在 PATH 时弹 WPF MessageBox 给出明确错误
+  - `src`、标准版 README 和发布脚本中不存在 DSH/Harness/3080 引用
+  - 发布目录只有 `AIUsageRobot.exe`
+  - `/health=200`、未授权 `/api/overview=401`
 
 ## 交接历史
 
-### 第 5 轮（当前）：修"杀 dsh 后机器人卡住" + 漏 UnobservedTaskException
+### 第 8 轮（当前）：恢复 `main` 标准版并建立双版本入口
+
+- 交出者：AI-A
+- 接收者：标准版后续开发者
+- 状态：已完成并验证，待提交推送
+- 基线提交：`2d195de`
+- 交接提交：见包含本记录的 `main` HEAD
+- 工作分支：`codex/standard-main-cleanup`
+
+#### 已完成
+
+1. 将 `MainWindow.xaml` 和 `MainWindow.xaml.cs` 精确恢复到通用修复提交 `3787f61` 的界面基线，撤除后续全部 DSH/Harness 代码。
+2. 保留 `2d195de` 中的服务线程安全、连接释放、SQLite 仓储基类和 WPF 异常兜底等非 DSH 修复。
+3. README 增加标准版与 DSH Edition 的分支、发布文件和适用场景对照。
+4. DSH 功能继续由 `codex/dsh-edition` 独立维护，不合并回 `main`。
+
+#### 未完成事项
+
+- 提交、快进 `main` 并推送。
+
+#### 验证结果
+
+- build：通过，0 警告、0 错误。
+- test：通过 12/12。
+- source：`src` 中无 DSH、Harness、3080 或旧启动方法引用。
+- publish：通过，目录内仅有 `AIUsageRobot.exe`。
+- runtime：标准版 Widget 和同名 `--service` 子进程正常启动。
+- API：`/health=200`；未授权 `/api/overview=401`。
+
+### 第 5 轮：修"杀 dsh 后机器人卡住" + 漏 UnobservedTaskException
 
 - 交出者：AI-B
 - 接收者：（待合并后由下一位 AI / 用户接管）
