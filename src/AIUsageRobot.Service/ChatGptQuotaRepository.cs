@@ -200,10 +200,10 @@ public sealed class ChatGptQuotaState(ChatGptQuotaRepository repository, Monitor
                 "unknown", null, null, CodexRateLimitParser.SourceVersion, [], await repository.GetUsageAsync(cancellationToken));
 
         var windows = stored.Select(ToDto).ToArray();
-        var selected = stored.MaxBy(item => PeriodMinutes(item.Period))!;
-        var selectedDto = windows.First(item => item.Name == selected.Name);
-        return new ChatGptQuotaDto(selected.Model, selectedDto.RemainingPercentage, "remaining", selected.Period,
-            selected.ResetAt, selected.ParserVersion, windows, await repository.GetUsageAsync(cancellationToken));
+        var selectedDto = CodexQuotaWindowPolicy.SelectFocusWindow(windows)!;
+        var selected = stored.First(item => item.Name == selectedDto.Name);
+        return new ChatGptQuotaDto(selected.Model, selectedDto.RemainingPercentage, "remaining", selectedDto.Period,
+            selectedDto.ResetAt, selected.ParserVersion, windows, await repository.GetUsageAsync(cancellationToken));
     }
 
     private CodexQuotaWindowDto ToDto(StoredCodexWindow window)
@@ -213,13 +213,6 @@ public sealed class ChatGptQuotaState(ChatGptQuotaRepository repository, Monitor
         var message = status switch { DataStatus.Stale => $"数据已过期 {FormatAge(age)}", DataStatus.Unavailable => "超过 24 小时未采集", _ => null };
         if (!string.IsNullOrWhiteSpace(_failureMessage) && status != DataStatus.Fresh) message = _failureMessage;
         return new CodexQuotaWindowDto(window.Name, new Metric<int?>(window.RemainingPercentage, status, window.CollectedAt, message), window.Period, window.ResetAt);
-    }
-
-    private static long PeriodMinutes(string? period)
-    {
-        var parts = period?.Split('_', 2);
-        if (parts is not { Length: 2 } || !long.TryParse(parts[0], out var value)) return 0;
-        return parts[1] switch { "minutes" => value, "hours" => value * 60, "days" => value * 1_440, "weeks" => value * 10_080, _ => 0 };
     }
 
     private static string FormatAge(TimeSpan age) => age.TotalHours >= 1 ? $"{(int)age.TotalHours}h" : $"{Math.Max(1, (int)age.TotalMinutes)}m";

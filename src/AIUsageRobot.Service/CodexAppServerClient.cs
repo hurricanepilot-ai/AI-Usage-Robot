@@ -24,7 +24,7 @@ public sealed class CodexAppServerClient(
         Task readyTask;
         lock (_connectionLock) readyTask = _ready.Task;
         await readyTask.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
-        await RefreshConnectedAsync(cancellationToken);
+        await RefreshConnectedAsync(includeUsage: true, cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -96,7 +96,7 @@ public sealed class CodexAppServerClient(
             await SendNotificationAsync("initialized", null, stoppingToken);
             lock (_connectionLock) _ready.TrySetResult(true);
 
-            await RefreshConnectedAsync(stoppingToken);
+            await RefreshConnectedAsync(includeUsage: true, stoppingToken);
 
             var intervalMinutes = Math.Clamp(configuration.GetValue("Codex:RefreshIntervalMinutes", 5), 1, 60);
             using var timer = new PeriodicTimer(TimeSpan.FromMinutes(intervalMinutes));
@@ -109,7 +109,7 @@ public sealed class CodexAppServerClient(
                 if (completed == exitTask || process.HasExited)
                     throw new InvalidOperationException("Codex app-server 已退出。");
                 if (!await tickTask) break;
-                await RefreshConnectedAsync(stoppingToken);
+                await RefreshConnectedAsync(includeUsage: true, stoppingToken);
             }
         }
         finally
@@ -124,7 +124,7 @@ public sealed class CodexAppServerClient(
         }
     }
 
-    private async Task RefreshConnectedAsync(CancellationToken cancellationToken)
+    private async Task RefreshConnectedAsync(bool includeUsage, CancellationToken cancellationToken)
     {
         if (!await _refreshGate.WaitAsync(0, cancellationToken)) return;
         try
@@ -134,6 +134,8 @@ public sealed class CodexAppServerClient(
             if (!CodexRateLimitParser.TryParseSnapshot(result, collectedAt, out var quota) || quota is null)
                 throw new InvalidDataException("Codex 返回的额度数据中没有可用窗口。");
             await quotaState.SaveAsync(quota, cancellationToken);
+
+            if (!includeUsage) return;
 
             try
             {
@@ -175,14 +177,23 @@ public sealed class CodexAppServerClient(
                     continue;
                 }
 
-                if (root.TryGetProperty("method", out var method) &&
-                    method.GetString() == "account/rateLimits/updated")
+                if (root.TryGetProperty("method", out var method))
                 {
-                    _ = Task.Run(async () =>
+                    var methodName = method.GetString();
+                    var refreshMode = methodName switch
                     {
-                        try { await RefreshConnectedAsync(cancellationToken); }
-                        catch (Exception exception) { logger.LogDebug(exception, "Unable to refresh after a rate-limit event."); }
-                    }, CancellationToken.None);
+                        "account/rateLimits/updated" => false,
+                        "account/updated" or "account/login/completed" => true,
+                        _ => (bool?)null
+                    };
+                    if (refreshMode is bool includeUsage)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try { await RefreshConnectedAsync(includeUsage, cancellationToken); }
+                            catch (Exception exception) { logger.LogDebug(exception, "Unable to refresh after an account event."); }
+                        }, CancellationToken.None);
+                    }
                 }
             }
             catch (JsonException exception)

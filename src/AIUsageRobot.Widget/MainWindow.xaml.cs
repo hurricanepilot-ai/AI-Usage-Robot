@@ -129,7 +129,7 @@ public partial class MainWindow : Window
         _showingChatGpt = chatGpt;
         ChatGptPage.Visibility = chatGpt ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekPage.Visibility = chatGpt ? Visibility.Collapsed : Visibility.Visible;
-        PageTitle.Text = chatGpt ? "CODEX" : "DEEPSEEK";
+        PageTitle.Text = chatGpt ? CodexPageTitle(_lastOverview?.ChatGPT) : "DEEPSEEK";
         DeepSeekEyeFill.Fill = chatGpt ? InactiveEyeBrush : DeepSeekActiveBrush;
         GptEyeFill.Fill = chatGpt ? GptActiveBrush : InactiveEyeBrush;
         AnimateArm(LeftArmRotation, chatGpt ? 0 : 180);
@@ -190,6 +190,8 @@ public partial class MainWindow : Window
         var display = value is int percentage ? $"{semanticLabel}{percentage}%" : data.Percentage.Status.ToString();
         ChatGptQuotaText.Text = display;
         ChatGptQuotaBar.Value = value ?? 0;
+        ChatGptPage.ToolTip = FormatCodexWindows(data.Windows);
+        if (_showingChatGpt) PageTitle.Text = CodexPageTitle(data);
     }
 
     private void RenderDeepSeek(DeepSeekBalanceDto data)
@@ -211,10 +213,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        var resetAt = _lastOverview?.ChatGPT.ResetAt;
+        var codex = _lastOverview?.ChatGPT;
+        var resetAt = codex?.ResetAt;
+        var focus = CodexQuotaWindowPolicy.SelectFocusWindow(codex?.Windows);
+        var label = focus is null ? "额度" : CodexQuotaWindowPolicy.DisplayLabel(focus);
         UpdatedText.Text = resetAt is null
             ? "重置时间未知"
-            : $"下次重置 {resetAt.Value.ToLocalTime():MM/dd HH:mm}";
+            : $"{label}重置 {resetAt.Value.ToLocalTime():MM/dd HH:mm}";
     }
 
     private static System.Windows.Media.Brush CombineStatus(DataStatus chatGpt, DataStatus deepSeek)
@@ -226,20 +231,16 @@ public partial class MainWindow : Window
         return Brushes.Gray;
     }
 
-    private static string FormatPeriod(string? period)
+    private static string CodexPageTitle(ChatGptQuotaDto? codex)
     {
-        if (string.IsNullOrWhiteSpace(period)) return "Unknown";
-        var parts = period.Split('_', 2);
-        if (parts.Length != 2) return period;
-        return $"{parts[0]} {parts[1] switch { "minutes" => "分钟", "hours" => "小时", "days" => "天", "weeks" => "周", "months" => "月", _ => parts[1] }}";
+        var focus = CodexQuotaWindowPolicy.SelectFocusWindow(codex?.Windows);
+        return focus is null ? "CODEX" : $"CODEX · {CodexQuotaWindowPolicy.DisplayLabel(focus).Replace("小时", "H").Replace("天", "D")}";
     }
 
-    private static long PeriodMinutes(string? period)
-    {
-        var parts = period?.Split('_', 2);
-        if (parts is not { Length: 2 } || !long.TryParse(parts[0], out var value)) return long.MaxValue;
-        return parts[1] switch { "minutes" => value, "hours" => value * 60, "days" => value * 1_440, "weeks" => value * 10_080, _ => long.MaxValue };
-    }
+    private static string FormatCodexWindows(IEnumerable<CodexQuotaWindowDto>? windows) => string.Join(
+        Environment.NewLine,
+        (windows ?? []).OrderBy(window => CodexQuotaWindowPolicy.PeriodMinutes(window.Period)).Select(window =>
+            $"{CodexQuotaWindowPolicy.DisplayLabel(window)}：剩余 {window.RemainingPercentage.Value?.ToString() ?? "--"}% · 重置 {window.ResetAt?.ToLocalTime():MM/dd HH:mm}"));
 
     private System.Windows.Forms.NotifyIcon BuildTrayIcon()
     {
@@ -285,13 +286,16 @@ public partial class MainWindow : Window
             _deepSeekNotificationLevel = 0;
             return;
         }
-        var codexRemaining = overview.ChatGPT.Windows?.Min(window => window.RemainingPercentage.Value) ?? overview.ChatGPT.Percentage.Value;
+        var constrainedWindow = overview.ChatGPT.Windows?
+            .Where(window => window.RemainingPercentage.Value.HasValue)
+            .MinBy(window => window.RemainingPercentage.Value);
+        var codexRemaining = constrainedWindow?.RemainingPercentage.Value ?? overview.ChatGPT.Percentage.Value;
         var criticalCodex = Math.Max(5, _alertSettings.CodexRemainingThreshold / 2);
         var codexLevel = !codexRemaining.HasValue ? 0
             : codexRemaining.Value <= criticalCodex ? 2
             : codexRemaining.Value <= _alertSettings.CodexRemainingThreshold ? 1 : 0;
         if (codexLevel > _codexNotificationLevel && codexRemaining is int codexValue)
-            ShowBalloon("Codex 配额提醒", $"当前最低周期仅剩 {codexValue}%", System.Windows.Forms.ToolTipIcon.Warning);
+            ShowBalloon("Codex 配额提醒", $"{(constrainedWindow is null ? "当前额度" : CodexQuotaWindowPolicy.DisplayLabel(constrainedWindow))}仅剩 {codexValue}%", System.Windows.Forms.ToolTipIcon.Warning);
         _codexNotificationLevel = codexLevel;
 
         var balance = overview.DeepSeek.TotalBalance.Value;
@@ -354,10 +358,10 @@ public partial class MainWindow : Window
     {
         if (_lastOverview is null) return;
         var codex = _lastOverview.ChatGPT;
-        var orderedWindows = codex.Windows?.OrderBy(window => PeriodMinutes(window.Period)).ToArray();
+        var orderedWindows = codex.Windows?.OrderBy(window => CodexQuotaWindowPolicy.PeriodMinutes(window.Period)).ToArray();
         var windows = orderedWindows is { Length: > 0 }
-            ? string.Join(Environment.NewLine, orderedWindows.Select((window, index) =>
-                $"{(orderedWindows.Length == 1 ? "配额" : index == 0 ? "短周期" : "长周期")}: {window.RemainingPercentage.Value?.ToString() ?? "--"}% · {FormatPeriod(window.Period)} · 重置 {window.ResetAt?.ToLocalTime():MM/dd HH:mm}"))
+            ? string.Join(Environment.NewLine, orderedWindows.Select(window =>
+                $"{CodexQuotaWindowPolicy.DisplayLabel(window)}: 剩余 {window.RemainingPercentage.Value?.ToString() ?? "--"}% · 重置 {window.ResetAt?.ToLocalTime():MM/dd HH:mm}"))
             : "暂无配额窗口";
         var usage = codex.Usage is null
             ? "暂无 token 使用统计"

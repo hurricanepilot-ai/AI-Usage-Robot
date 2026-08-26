@@ -131,9 +131,13 @@ public sealed class TrendWindow : Window
 
     private void RenderCodex(ChatGptQuotaDto codex)
     {
-        var remaining = codex.Windows?.Min(window => window.RemainingPercentage.Value) ?? codex.Percentage.Value;
-        _headline.Text = remaining is int value ? $"剩余 {value}%" : "Codex 配额未知";
-        _summary.Text = $"近七日 Token 使用 · 累计 {codex.Usage?.LifetimeTokens:N0}";
+        var focus = CodexQuotaWindowPolicy.SelectFocusWindow(codex.Windows);
+        var remaining = focus?.RemainingPercentage.Value ?? codex.Percentage.Value;
+        var label = focus is null ? "Codex" : CodexQuotaWindowPolicy.DisplayLabel(focus);
+        _headline.Text = remaining is int value ? $"{label}剩余 {value}%" : "Codex 配额未知";
+        var weekly = codex.Windows?.FirstOrDefault(window => CodexQuotaWindowPolicy.PeriodMinutes(window.Period) == 10_080);
+        var weeklyText = weekly?.RemainingPercentage.Value is int weeklyValue ? $" · 7天剩余 {weeklyValue}%" : string.Empty;
+        _summary.Text = $"近七日 Token 使用{weeklyText} · 累计 {codex.Usage?.LifetimeTokens:N0}";
         var usage = codex.Usage?.DailyUsage.ToDictionary(item => item.StartDate, item => (double)item.Tokens) ?? [];
         var points = LastSevenDays().Select(date => new TrendPoint(date, usage.GetValueOrDefault(date))).ToArray();
         _chart.SetPoints(points, "tokens", Color.FromRgb(255, 82, 96), bars: true);

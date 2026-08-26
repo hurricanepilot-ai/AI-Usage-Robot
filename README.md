@@ -15,11 +15,11 @@ AI Usage Robot 是一个 Windows 桌面常驻机器人组件，监控 ChatGPT Pl
 - Service 维持本机 Codex app-server 长连接，通过 `account/rateLimits/read` 查询额度，并监听 `account/rateLimits/updated` 更新事件；不读取浏览器 Cookie、Session Token 或聊天内容。
 - 腹部屏幕只保留 Codex / DeepSeek 两个视图；不自动轮播、不响应滚轮。左眼激活为蓝色并将左臂向上旋转 180°，显示 DeepSeek；右眼激活为红色并将右臂向上旋转 180°，显示 Codex；未激活眼睛为黑色。
 - Codex 配额保存计划类型、剩余百分比、周期、重置时间、采集时间和数据源版本。
-- Codex 同时保存并显示短周期与长周期额度窗口，不再只选择最长周期。
+- Codex 同时保存 5 小时与 7 天额度窗口；机器人腹部优先显示 5 小时剩余量和对应重置时间，详情页保留两个窗口。
 - 支持 Codex app-server `account/usage/read`：保存累计 token、峰值日、连续使用天数及最近 31 天每日用量；旧版 app-server 不支持时自动降级，不影响配额同步。
 - Codex 与 DeepSeek 每次成功同步都会写入统一 SQLite 历史快照，可通过 `/api/history/codex` 与 `/api/history/deepseek` 查询。
 - 配额数据按 `<15 分钟`、`15 分钟～24 小时`、`>24 小时` 分别显示 Fresh、Stale、Unavailable。
-- Codex Service 启动时立即查询，收到 app-server 更新事件时重新查询，并每 5 分钟主动校准一次。
+- Codex Service 启动时立即查询，收到 app-server 额度更新事件时只重新查询 `account/rateLimits/read`，并每 5 分钟完整校准额度与用量；账号切换后自动完整刷新。
 - DeepSeek Service 启动时立即查询官方余额接口，之后按固定 5 分钟周期刷新；网络请求耗时不会累积到下一个周期。
 - 点击左眼切换 DeepSeek 时立即刷新官方余额；点击右眼切换 Codex 时立即调用本机 app-server 查询额度。
 - 系统托盘支持显示机器人、查看详情、同步全部和退出；不再设置开机自启动，重复启动时只保留一个 Widget 实例。
