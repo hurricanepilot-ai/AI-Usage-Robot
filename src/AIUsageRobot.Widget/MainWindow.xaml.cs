@@ -549,6 +549,12 @@ public partial class MainWindow : Window
             for (var attempt = 0; attempt < 30; attempt++)
             {
                 await Task.Delay(200);
+                // If the Process.Exited handler already fired (the user killed the
+                // Harness in the background, or it crashed on its own), _harnessProcess
+                // is null and StartHarnessExitBlink is now driving the left eye. Don't
+                // pile a "dsh web 启动后立即退出" modal on top — it freezes the UI with
+                // no visible cause and looks like the robot crashed.
+                if (_harnessProcess is null) return;
                 if (!IsHarnessProcessAlive())
                 {
                     MessageBox.Show(this,
@@ -575,17 +581,31 @@ public partial class MainWindow : Window
 
     private static async Task<bool> IsHarnessReachableAsync()
     {
-        using var client = new TcpClient();
+        var client = new TcpClient();
         try
         {
             var connectTask = client.ConnectAsync(HarnessHost, HarnessPort);
             var timeoutTask = Task.Delay(500);
-            var completed = await Task.WhenAny(connectTask, timeoutTask);
-            return completed == connectTask && client.Connected;
+            var winner = await Task.WhenAny(connectTask, timeoutTask);
+            if (winner != connectTask)
+            {
+                // Timed out. Closing the socket aborts the in-flight connect, and
+                // awaiting the now-failed connectTask observes its SocketException(995)
+                // so it doesn't surface as an UnobservedTaskException later. Without
+                // this, every timeout leaks one entry into widget-crash.log.
+                client.Close();
+                try { await connectTask; } catch { /* expected: aborted by Close */ }
+                return false;
+            }
+            return client.Connected;
         }
         catch
         {
             return false;
+        }
+        finally
+        {
+            client.Dispose();
         }
     }
 
