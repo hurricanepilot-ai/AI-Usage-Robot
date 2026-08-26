@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -40,6 +41,13 @@ public partial class MainWindow : Window
     private TrendWindow? _trendWindow;
     private DesktopAlertWindow? _desktopAlert;
     private bool _showingChatGpt;
+
+    // DeepSeek Harness launcher state (double-click left eye to start)
+    private const string HarnessHost = "127.0.0.1";
+    private const int HarnessPort = 3080;
+    private static readonly string HarnessUrl = $"http://{HarnessHost}:{HarnessPort}/";
+    private static readonly SemaphoreSlim HarnessLaunchGate = new(1, 1);
+    private static Process? _harnessProcess;
 
     public MainWindow()
     {
@@ -86,11 +94,23 @@ public partial class MainWindow : Window
         if (e.ClickCount == 1 && e.LeftButton == MouseButtonState.Pressed) DragMove();
     }
 
-    private async void DeepSeekEyeButton_Click(object sender, RoutedEventArgs e)
+    // Left-eye single click keeps the original "switch to DeepSeek + refresh" behavior.
+    // Double click launches the DeepSeek Harness web GUI in the background.
+    // We use PreviewMouseLeftButtonDown instead of Click because RoutedEventArgs on Button.Click
+    // does not expose ClickCount, but MouseButtonEventArgs here does, which lets us cleanly
+    // distinguish single vs. double click without a debounce timer.
+    private async void DeepSeekEyeButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ClickCount >= 2) return; // MouseDoubleClick handler will run instead.
         e.Handled = true;
         ShowProvider(chatGpt: false);
         await SyncSelectedProviderAsync(chatGpt: false);
+    }
+
+    private async void DeepSeekEyeButton_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        await LaunchHarnessAsync();
     }
 
     private async void GptEyeButton_Click(object sender, RoutedEventArgs e)
@@ -429,29 +449,123 @@ public partial class MainWindow : Window
         alertSettings.Click += (_, _) => ShowAlertSettings();
         var credential = new MenuItem { Header = "设置 DeepSeek API Key…" };
         credential.Click += async (_, _) => await ShowCredentialDialogAsync();
-        var launchDeepSeek = new MenuItem { Header = "启动本地 DeepSeek…" };
-        launchDeepSeek.Click += (_, _) => LaunchLocalDeepSeek();
         var topmost = new MenuItem { Header = "始终置顶", IsCheckable = true, IsChecked = true };
         topmost.Click += (_, _) => Topmost = topmost.IsChecked;
         var exit = new MenuItem { Header = "退出" };
         exit.Click += (_, _) => Close();
-        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(testAlert); menu.Items.Add(alertSettings); menu.Items.Add(credential); menu.Items.Add(launchDeepSeek);
+        menu.Items.Add(refresh); menu.Items.Add(details); menu.Items.Add(testAlert); menu.Items.Add(alertSettings); menu.Items.Add(credential);
         menu.Items.Add(new Separator()); menu.Items.Add(topmost); menu.Items.Add(new Separator()); menu.Items.Add(exit);
         ContextMenu = menu;
     }
 
-    private void LaunchLocalDeepSeek()
+    // Launches the DeepSeek Harness web GUI in the background.
+    // Sequence:
+    //   1. TCP probe 127.0.0.1:3080 — if reachable, an instance is already running (started by us
+    //      earlier, by the user from a command line, or by another tool). Just open the browser.
+    //   2. Otherwise, start `dsh web` detached with no console window and remember the handle.
+    //      Poll the port until it answers (up to ~6s), then open the browser.
+    //   3. If the process can't be launched or never opens the port, surface a MessageBox.
+    // HarnessLaunchGate prevents a burst of double-clicks from spawning multiple `dsh web` processes.
+    private async Task LaunchHarnessAsync()
+    {
+        if (!await HarnessLaunchGate.WaitAsync(0))
+        {
+            // Another double-click is already in flight; let that one handle it.
+            return;
+        }
+        try
+        {
+            if (await IsHarnessReachableAsync())
+            {
+                OpenInBrowser(HarnessUrl);
+                return;
+            }
+
+            try
+            {
+                _harnessProcess = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "dsh",
+                    Arguments = "web",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                });
+            }
+            catch (Exception startException)
+            {
+                MessageBox.Show(this,
+                    $"无法启动 dsh web（PATH 中找不到 dsh）：{startException.Message}\n\n请确认 `dsh` 命令已在当前用户的 PATH 中。",
+                    "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            for (var attempt = 0; attempt < 30; attempt++)
+            {
+                await Task.Delay(200);
+                if (!IsHarnessProcessAlive())
+                {
+                    MessageBox.Show(this,
+                        "dsh web 启动后立即退出。请在命令行手动运行 `dsh web` 查看错误输出。",
+                        "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (await IsHarnessReachableAsync())
+                {
+                    OpenInBrowser(HarnessUrl);
+                    return;
+                }
+            }
+
+            MessageBox.Show(this,
+                $"dsh web 已启动但 {HarnessPort} 端口在 6 秒内未响应。请检查 dsh 是否真的启动成功。",
+                "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            HarnessLaunchGate.Release();
+        }
+    }
+
+    private static async Task<bool> IsHarnessReachableAsync()
+    {
+        using var client = new TcpClient();
+        try
+        {
+            var connectTask = client.ConnectAsync(HarnessHost, HarnessPort);
+            var timeoutTask = Task.Delay(500);
+            var completed = await Task.WhenAny(connectTask, timeoutTask);
+            return completed == connectTask && client.Connected;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool IsHarnessProcessAlive()
     {
         try
         {
-            Process.Start(new ProcessStartInfo("https://platform.deepseek.com/")
-            {
-                UseShellExecute = true
-            });
+            return _harnessProcess is { HasExited: false };
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void OpenInBrowser(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, $"无法打开 DeepSeek 平台页：{exception.Message}", "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(
+                $"无法打开浏览器：{exception.Message}\n\n请手动访问 {url}",
+                "AI Usage Robot", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
