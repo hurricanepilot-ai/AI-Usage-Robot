@@ -13,10 +13,8 @@ public sealed record StoredCodexWindow(
     DateTimeOffset CollectedAt,
     string ParserVersion);
 
-public sealed class ChatGptQuotaRepository
+public sealed class ChatGptQuotaRepository : SqliteRepositoryBase
 {
-    private string ConnectionString => new SqliteConnectionStringBuilder { DataSource = LocalAppStorage.DatabasePath }.ToString();
-
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(LocalAppStorage.RootDirectory);

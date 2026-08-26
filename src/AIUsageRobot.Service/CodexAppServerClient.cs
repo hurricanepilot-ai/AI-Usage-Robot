@@ -257,6 +257,8 @@ public sealed class CodexAppServerClient(
         lock (_connectionLock)
         {
             _ready.TrySetException(new InvalidOperationException("Codex app-server 连接已断开。"));
+            try { _input?.Dispose(); }
+            catch (Exception exception) { logger.LogDebug(exception, "Failed to dispose Codex app-server input writer."); }
             _input = null;
             _process = null;
         }

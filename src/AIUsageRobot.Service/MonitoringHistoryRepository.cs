@@ -4,10 +4,8 @@ using System.Globalization;
 
 namespace AIUsageRobot.Service;
 
-public sealed class MonitoringHistoryRepository
+public sealed class MonitoringHistoryRepository : SqliteRepositoryBase
 {
-    private string ConnectionString => new SqliteConnectionStringBuilder { DataSource = LocalAppStorage.DatabasePath }.ToString();
-
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(LocalAppStorage.RootDirectory);
